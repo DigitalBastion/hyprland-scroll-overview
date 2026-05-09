@@ -655,13 +655,6 @@ static Layout::Tiled::CScrollingAlgorithm* overviewScrollingAlgorithmForTarget(c
     return dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>(target->space()->algorithm()->m_tiled.get());
 }
 
-static Layout::Tiled::CScrollingAlgorithm* overviewScrollingAlgorithmForWorkspace(const PHLWORKSPACE& workspace) {
-    if (!workspace || !workspace->m_space || !workspace->m_space->algorithm())
-        return nullptr;
-
-    return dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>(workspace->m_space->algorithm()->tiledAlgo().get());
-}
-
 static bool moveOverviewScrollingTargetToHorizontalEdge(const SP<Layout::ITarget>& target, int side) {
     if (!target || side == 0)
         return false;
@@ -1016,7 +1009,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
         lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
         if (g_pInputManager->getModsFromAllKBs() & HL_MODIFIER_SHIFT) {
-            scrollHoveredWorkspace(e.delta < 0);
+            scrollActiveWorkspace(e.delta < 0);
             return;
         }
 
@@ -1993,31 +1986,8 @@ void CScrollOverview::moveViewportWorkspace(bool up) {
     damage();
 }
 
-bool CScrollOverview::scrollHoveredWorkspace(bool up) {
-    const auto WORKSPACE = workspaceAtOverviewCursor();
-    const auto ALGO      = overviewScrollingAlgorithmForWorkspace(WORKSPACE);
-
-    if (!ALGO || !ALGO->m_scrollingData || !ALGO->m_scrollingData->controller || ALGO->m_scrollingData->columns.empty())
-        return false;
-
-    const auto CURRENT_COL = ALGO->m_scrollingData->atCenter();
-    auto       targetCol   = CURRENT_COL ? (up ? ALGO->m_scrollingData->next(CURRENT_COL) : ALGO->m_scrollingData->prev(CURRENT_COL)) :
-                                           (up ? ALGO->m_scrollingData->columns.front() : ALGO->m_scrollingData->columns.back());
-
-    if (!targetCol) {
-        if (!up)
-            return false;
-
-        ALGO->m_scrollingData->controller->setOffset(ALGO->m_scrollingData->maxWidth());
-        ALGO->m_scrollingData->recalculate();
-        damage();
-        return true;
-    }
-
-    ALGO->m_scrollingData->centerOrFitCol(targetCol);
-    ALGO->m_scrollingData->recalculate();
-    damage();
-    return true;
+bool CScrollOverview::scrollActiveWorkspace(bool up) {
+    return moveWindowSelection(up ? "r" : "l");
 }
 
 void CScrollOverview::syncSelectionToViewport() {
