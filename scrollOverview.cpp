@@ -1016,7 +1016,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
         lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
         if (g_pInputManager->getModsFromAllKBs() & HL_MODIFIER_SHIFT) {
-            scrollHoveredWorkspace(e.delta > 0);
+            scrollHoveredWorkspace(e.delta < 0);
             return;
         }
 
