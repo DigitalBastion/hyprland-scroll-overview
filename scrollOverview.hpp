@@ -64,7 +64,7 @@ class CScrollOverview : public IOverview {
     void   renderDraggedWindow(PHLMONITOR monitor, size_t activeIdx, float workspacePitch, float renderScale, const Time::steady_tp& now);
     void   renderPinnedFloatingWindows(PHLMONITOR monitor, float overviewScale, const Time::steady_tp& now);
     void   moveViewportWorkspace(bool up);
-    bool   scrollActiveWorkspace(bool up);
+    bool   scrollActiveWorkspace(const std::string& direction);
     bool   moveWindowSelection(const std::string& direction);
     void   rememberSelection(PHLWINDOW window);
     void   syncSelectionToViewport();

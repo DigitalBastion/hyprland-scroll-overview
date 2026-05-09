@@ -87,6 +87,19 @@ static xkb_keysym_t getOverviewKeysym(const IKeyboard::SKeyEvent& event) {
     return xkb_state_key_get_one_sym(STATE, event.keycode + 8);
 }
 
+static std::optional<std::string> getOverviewScrollDirection(const IPointer::SAxisEvent& event) {
+    if (event.delta == 0.0)
+        return std::nullopt;
+
+    if (event.axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
+        return event.delta > 0.0 ? "l" : "r";
+
+    if (event.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL)
+        return event.delta > 0.0 ? "l" : "r";
+
+    return std::nullopt;
+}
+
 static bool isTopLayerFocused(PHLMONITOR monitor) {
     const auto FOCUSEDSURFACE = g_pSeatManager->m_state.keyboardFocus.lock();
 
@@ -1009,7 +1022,8 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
         lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
         if (g_pInputManager->getModsFromAllKBs() & HL_MODIFIER_SHIFT) {
-            scrollActiveWorkspace(e.delta < 0);
+            if (const auto direction = getOverviewScrollDirection(e))
+                scrollActiveWorkspace(*direction);
             return;
         }
 
@@ -1986,8 +2000,8 @@ void CScrollOverview::moveViewportWorkspace(bool up) {
     damage();
 }
 
-bool CScrollOverview::scrollActiveWorkspace(bool up) {
-    return moveWindowSelection(up ? "r" : "l");
+bool CScrollOverview::scrollActiveWorkspace(const std::string& direction) {
+    return moveWindowSelection(direction);
 }
 
 void CScrollOverview::syncSelectionToViewport() {
