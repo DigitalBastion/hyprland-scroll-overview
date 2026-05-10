@@ -92,10 +92,10 @@ static std::optional<std::string> getOverviewScrollDirection(const IPointer::SAx
         return std::nullopt;
 
     if (event.axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-        return event.delta > 0.0 ? "l" : "r";
+        return event.delta > 0.0 ? "r" : "l";
 
     if (event.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL)
-        return event.delta > 0.0 ? "l" : "r";
+        return event.delta > 0.0 ? "r" : "l";
 
     return std::nullopt;
 }
