@@ -18,6 +18,7 @@ struct SRenderParams {
     const CBox*           workspaceBox      = nullptr;
     bool                  usePrecomputedBlur = false;
     bool                  selected          = false;
+    bool                  closing           = false;
 };
 
 void renderOverviewWindow(const SRenderParams& params);

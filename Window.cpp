@@ -1,8 +1,12 @@
 #include "Window.hpp"
 #include <algorithm>
+#include <cairo/cairo.h>
 #include <cmath>
 #include <dlfcn.h>
+#include <drm_fourcc.h>
 #include <functional>
+#include <pango/pangocairo.h>
+#include <unordered_map>
 #define private public
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -15,6 +19,7 @@
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/managers/EventManager.hpp>
 #include <hyprland/src/plugins/PluginSystem.hpp>
+#include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/pass/Pass.hpp>
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
@@ -90,6 +95,15 @@ struct SOverviewWindowMetrics {
     bool  borderIncludesHyprbar   = false;
 };
 
+struct SOverviewTitleTextureCache {
+    std::string  title;
+    int          width     = 0;
+    int          height    = 0;
+    int          fontPx    = 0;
+    int64_t      textColor = 0;
+    SP<CTexture> texture;
+};
+
 static PHLWINDOW getOverviewWindowToShow(const PHLWINDOW& window) {
     if (!window)
         return nullptr;
@@ -110,6 +124,142 @@ static bool shouldShowOverviewWindow(const PHLWINDOW& window) {
         return false;
 
     return true;
+}
+
+static bool getOverviewTitleEnabled() {
+    static auto* const* PENABLED = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:enabled")->getDataStaticPtr();
+    return **PENABLED;
+}
+
+static int getOverviewTitleFontSize() {
+    static auto* const* PFONTSIZE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:font_size")->getDataStaticPtr();
+    return std::max<int>(1, **PFONTSIZE);
+}
+
+static float getOverviewConfiguredScale() {
+    static auto* const* PSCALE = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:scale")->getDataStaticPtr();
+    return std::clamp(**PSCALE, 0.1F, 0.9F);
+}
+
+static float getOverviewTitleAlpha(float renderScale, bool closing, float targetOpacity) {
+    if (!closing)
+        return targetOpacity;
+
+    const float configuredScale = getOverviewConfiguredScale();
+    const float progress        = std::clamp((1.F - renderScale) / std::max(0.001F, 1.F - configuredScale), 0.F, 1.F);
+    const float closeAlpha      = std::clamp((progress - 0.55F) / 0.25F, 0.F, 1.F);
+    return targetOpacity * closeAlpha;
+}
+
+static CHyprColor getOverviewTitleTextColor(int64_t* rawValue = nullptr) {
+    static auto* const* PTEXTCOLOR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:text_color")->getDataStaticPtr();
+    if (rawValue)
+        *rawValue = **PTEXTCOLOR;
+
+    return CHyprColor(sc<uint64_t>(**PTEXTCOLOR));
+}
+
+static CHyprColor getOverviewTitleBackgroundColor() {
+    static auto* const* PBACKGROUNDCOLOR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:background_color")->getDataStaticPtr();
+    return CHyprColor(sc<uint64_t>(**PBACKGROUNDCOLOR));
+}
+
+static CHyprColor getOverviewInactiveBorderTitleColor(const PHLWINDOW& window) {
+    static auto PINACTIVECOL = CConfigValue<Hyprlang::CUSTOMTYPE>("general:col.inactive_border");
+    auto* const INACTIVECOL  = sc<CGradientValueData*>((PINACTIVECOL.ptr())->getData());
+
+    const auto& grad = window->m_ruleApplicator->inactiveBorderColor().valueOr(*INACTIVECOL);
+    if (grad.m_colors.empty())
+        return getOverviewTitleBackgroundColor();
+
+    return grad.m_colors[0];
+}
+
+static SP<CTexture> createOverviewTitleTexture(const std::string& title, int width, int height, int fontPx, const CHyprColor& textColor) {
+    if (title.empty() || width <= 0 || height <= 0 || fontPx <= 0)
+        return nullptr;
+
+    cairo_surface_t* const surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    if (!surface || cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        if (surface)
+            cairo_surface_destroy(surface);
+        return nullptr;
+    }
+
+    cairo_t* const cairo = cairo_create(surface);
+    if (!cairo || cairo_status(cairo) != CAIRO_STATUS_SUCCESS) {
+        if (cairo)
+            cairo_destroy(cairo);
+        cairo_surface_destroy(surface);
+        return nullptr;
+    }
+
+    cairo_set_source_rgba(cairo, 0.0, 0.0, 0.0, 0.0);
+    cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
+    cairo_paint(cairo);
+    cairo_set_operator(cairo, CAIRO_OPERATOR_OVER);
+
+    PangoLayout* const layout = pango_cairo_create_layout(cairo);
+    if (!layout) {
+        cairo_destroy(cairo);
+        cairo_surface_destroy(surface);
+        return nullptr;
+    }
+
+    PangoFontDescription* const font = pango_font_description_new();
+    pango_font_description_set_family(font, "Sans");
+    pango_font_description_set_absolute_size(font, fontPx * PANGO_SCALE);
+    pango_font_description_set_weight(font, PANGO_WEIGHT_BOLD);
+    pango_layout_set_font_description(layout, font);
+    pango_font_description_free(font);
+
+    pango_layout_set_text(layout, title.c_str(), -1);
+    pango_layout_set_width(layout, width * PANGO_SCALE);
+    pango_layout_set_alignment(layout, PANGO_ALIGN_CENTER);
+    pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+    pango_layout_set_single_paragraph_mode(layout, true);
+
+    PangoRectangle logical;
+    pango_layout_get_pixel_extents(layout, nullptr, &logical);
+
+    cairo_set_source_rgba(cairo, textColor.r, textColor.g, textColor.b, textColor.a);
+    cairo_move_to(cairo, 0, std::round((height - logical.height) / 2.F) - logical.y);
+    pango_cairo_show_layout(cairo, layout);
+
+    g_object_unref(layout);
+    cairo_destroy(cairo);
+    cairo_surface_flush(surface);
+
+    auto texture = makeShared<CTexture>(DRM_FORMAT_ARGB8888, cairo_image_surface_get_data(surface), cairo_image_surface_get_stride(surface), Vector2D{width, height});
+    cairo_surface_destroy(surface);
+
+    return texture;
+}
+
+static SP<CTexture> getOverviewTitleTexture(const PHLWINDOW& window, const std::string& title, int width, int height, int fontPx, int64_t textColorRaw,
+                                            const CHyprColor& textColor) {
+    static std::unordered_map<uintptr_t, SOverviewTitleTextureCache> TITLETEXTURECACHE;
+
+    if (!window)
+        return nullptr;
+
+    if (TITLETEXTURECACHE.size() > 512)
+        TITLETEXTURECACHE.clear();
+
+    const auto KEY = rc<uintptr_t>(window.get());
+    auto&      entry = TITLETEXTURECACHE[KEY];
+
+    if (entry.texture && entry.title == title && entry.width == width && entry.height == height && entry.fontPx == fontPx && entry.textColor == textColorRaw)
+        return entry.texture;
+
+    entry.title     = title;
+    entry.width     = width;
+    entry.height    = height;
+    entry.fontPx    = fontPx;
+    entry.textColor = textColorRaw;
+    entry.texture   = createOverviewTitleTexture(title, width, height, fontPx, textColor);
+
+    return entry.texture;
 }
 
 static void overrideSurfaceOpacity(std::vector<SSurfaceOpacityOverride>& overrides, SP<CWLSurfaceResource> surface, float opacity) {
@@ -526,6 +676,72 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(data));
 }
 
+static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, bool closing) {
+    if (!monitor || !window)
+        return;
+
+    if (!getOverviewTitleEnabled())
+        return;
+
+    const std::string& title = !window->m_title.empty() ? window->m_title : window->m_class;
+    if (title.empty())
+        return;
+
+    const float titleAlpha = getOverviewTitleAlpha(metrics.renderScale, closing, metrics.targetOpacity);
+    if (titleAlpha <= 0.01F)
+        return;
+
+    const float uiScale     = std::max(0.1F, metrics.pxScale);
+    const int   fontPx      = std::max(1, sc<int>(std::round(getOverviewTitleFontSize() * uiScale)));
+    const float paddingX    = std::max(1.F, std::round(12.F * uiScale));
+    const float paddingY    = std::max(1.F, std::round(6.F * uiScale));
+    const float titleHeight = std::max(1.F, std::round(fontPx + paddingY * 2.F));
+    const float separatorX  = 1.25F;
+
+    if (windowBox.width <= paddingX * 2.F + separatorX * 2.F || windowBox.height <= titleHeight)
+        return;
+
+    if (titleHeight > windowBox.height * 0.75F)
+        return;
+
+    CBox titleBox = {windowBox.x + separatorX, windowBox.y, windowBox.width - separatorX * 2.F, titleHeight};
+    if (titleBox.empty())
+        return;
+
+    CBox textBox = {titleBox.x + paddingX, titleBox.y, titleBox.width - paddingX * 2.F, titleBox.height};
+    textBox.round();
+    if (textBox.empty())
+        return;
+
+    CHyprColor backgroundColor = getOverviewInactiveBorderTitleColor(window);
+    backgroundColor.a = std::max(backgroundColor.a, 0.85);
+    backgroundColor.a *= titleAlpha;
+    if (backgroundColor.a > 0.F) {
+        CRegion damage{CBox{{}, monitor->m_transformedSize}};
+        g_pHyprOpenGL->renderRect(titleBox, backgroundColor,
+                                  {.damage = &damage});
+    }
+
+    int64_t    textColorRaw = 0;
+    CHyprColor textColor    = getOverviewTitleTextColor(&textColorRaw);
+    textColor.a             = 1.F;
+    if (textColor.a <= 0.F)
+        return;
+
+    const int textWidth  = sc<int>(std::round(textBox.width));
+    const int textHeight = sc<int>(std::round(textBox.height));
+    auto      texture    = getOverviewTitleTexture(window, title, textWidth, textHeight, fontPx, textColorRaw, textColor);
+    if (!texture)
+        return;
+
+    CRegion                              damage{CBox{{}, monitor->m_transformedSize}};
+    CHyprOpenGLImpl::STextureRenderData data;
+    data.damage   = &damage;
+    data.a        = titleAlpha;
+    data.allowDim = false;
+    g_pHyprOpenGL->renderTexture(texture, textBox, data);
+}
+
 static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha) {
     if (!monitor || !window || !window->m_group || window->m_group->size() < 1)
         return;
@@ -754,6 +970,7 @@ void renderOverviewWindow(const SRenderParams& params) {
     }
 
     OverviewRender::flushPass(params.monitor);
+    renderOverviewWindowTitle(params.monitor, params.window, params.windowBox, metrics, params.closing);
 }
 
 } // namespace OverviewWindow

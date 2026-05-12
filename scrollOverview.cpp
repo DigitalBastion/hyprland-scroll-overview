@@ -2637,6 +2637,7 @@ void CScrollOverview::renderWindowLive(PHLMONITOR monitor, PHLWINDOW window, con
         .workspaceBox       = workspaceBox,
         .usePrecomputedBlur = usePrecomputedBlur,
         .selected           = closeOnWindow == window,
+        .closing            = closing,
     });
 }
 
