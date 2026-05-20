@@ -919,6 +919,18 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
 
         info.cancelled = true;
 
+        if (event.button == BTN_MIDDLE) {
+            lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
+
+            if (event.state == WL_POINTER_BUTTON_STATE_PRESSED) {
+                const auto window = windowAtOverviewCursor();
+                if (shouldShowOverviewWindow(window))
+                    g_pCompositor->closeWindow(window);
+            }
+
+            return;
+        }
+
         if (event.button == BTN_RIGHT) {
             lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
