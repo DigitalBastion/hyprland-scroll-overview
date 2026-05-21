@@ -100,6 +100,7 @@ class CScrollOverview : public IOverview {
     void   scheduleMinimumPreviewFrame();
     void   schedulePreviewFrameAfter(std::chrono::milliseconds delay);
     void   scheduleRealtimePreviewFrame();
+    void   stopRealtimePreviewTimer();
     static int realtimePreviewTimerCallback(void* data);
 
     size_t viewportCurrentWorkspace = 0;

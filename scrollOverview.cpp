@@ -53,6 +53,9 @@
 #include "Window.hpp"
 
 static void damageMonitor(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
+    if (!g_pScrollOverview)
+        return;
+
     g_pScrollOverview->damage();
 }
 
@@ -799,10 +802,7 @@ static void moveOverviewTargetNextToWindow(const SP<Layout::ITarget>& target, co
 
 CScrollOverview::~CScrollOverview() {
     g_pHyprRenderer->makeEGLCurrent();
-    if (realtimePreviewTimer) {
-        wl_event_source_remove(realtimePreviewTimer);
-        realtimePreviewTimer = nullptr;
-    }
+    stopRealtimePreviewTimer();
     backdropBlurFB.release();
     const auto MONITOR = pMonitor.lock();
     const auto WORKSPACE = MONITOR ? MONITOR->m_activeWorkspace : PHLWORKSPACE{};
@@ -813,7 +813,8 @@ CScrollOverview::~CScrollOverview() {
     restoreForcedLayerVisibility();
     images.clear(); // otherwise we get a vram leak
     Cursor::overrideController->unsetOverride(Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
-    g_pHyprOpenGL->markBlurDirtyForMonitor(pMonitor.lock());
+    if (MONITOR)
+        g_pHyprOpenGL->markBlurDirtyForMonitor(MONITOR);
 }
 
 CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn_), swipe(swipe_) {
@@ -2722,8 +2723,12 @@ void CScrollOverview::redrawAll(bool forcelowres) {
 }
 
 void CScrollOverview::damage() {
+    const auto MONITOR = pMonitor.lock();
+    if (!MONITOR)
+        return;
+
     blockDamageReporting = true;
-    g_pHyprRenderer->damageMonitor(pMonitor.lock());
+    g_pHyprRenderer->damageMonitor(MONITOR);
     blockDamageReporting = false;
 }
 
@@ -2793,8 +2798,19 @@ bool CScrollOverview::shouldAllowRealtimePreviewSchedule() {
     return false;
 }
 
+void CScrollOverview::stopRealtimePreviewTimer() {
+    realtimePreviewTimerArmed  = false;
+    realtimePreviewTimerDue    = {};
+    realtimePreviewFrameQueued = false;
+
+    if (realtimePreviewTimer) {
+        wl_event_source_remove(realtimePreviewTimer);
+        realtimePreviewTimer = nullptr;
+    }
+}
+
 void CScrollOverview::schedulePreviewFrameAfter(std::chrono::milliseconds delay) {
-    if (!realtimePreviewTimer)
+    if (!realtimePreviewTimer || closing || !pMonitor.lock())
         return;
 
     const auto DELAY = std::max<int>(1, sc<int>(delay.count()));
@@ -2828,6 +2844,21 @@ int CScrollOverview::realtimePreviewTimerCallback(void* data) {
     OVERVIEW->realtimePreviewTimerArmed  = false;
     OVERVIEW->realtimePreviewTimerDue    = {};
     OVERVIEW->realtimePreviewFrameQueued = false;
+
+    if (!OVERVIEW->pMonitor.lock()) {
+        if (!OVERVIEW->closing && g_pScrollOverview.get() == OVERVIEW)
+            removeOverview({});
+        else
+            OVERVIEW->stopRealtimePreviewTimer();
+
+        return 0;
+    }
+
+    if (OVERVIEW->closing) {
+        OVERVIEW->stopRealtimePreviewTimer();
+        return 0;
+    }
+
     OVERVIEW->damage();
     OVERVIEW->scheduleMinimumPreviewFrame();
     return 0;
@@ -3152,6 +3183,7 @@ bool CScrollOverview::shouldHandleSurfaceDamage(SP<CWLSurfaceResource> surface) 
 
 void CScrollOverview::close() {
     closing = true;
+    stopRealtimePreviewTimer();
 
     const auto SELECTEDWORKSPACE =
         viewportCurrentWorkspace < images.size() && images[viewportCurrentWorkspace] ? images[viewportCurrentWorkspace]->pWorkspace : PHLWORKSPACE{};
