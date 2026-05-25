@@ -8,9 +8,11 @@
 #include <pango/pangocairo.h>
 #include <unordered_map>
 #define private public
+#define protected public
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
+#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -28,9 +30,14 @@
 #include <hyprland/src/render/decorations/CHyprGroupBarDecoration.hpp>
 #include <hyprland/src/render/decorations/DecorationPositioner.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
+#undef protected
 #undef private
 #include "OverviewPassElement.hpp"
 #include "OverviewRender.hpp"
+
+using namespace Render;
+using Render::GL::CHyprOpenGLImpl;
+using Render::GL::g_pHyprOpenGL;
 
 namespace OverviewWindow {
 namespace {
@@ -67,7 +74,7 @@ struct SHyprbarButtonMirror {
     CHyprColor   bgcol   = CHyprColor(0, 0, 0, 0);
     float        size    = 10.F;
     std::string  icon    = "";
-    SP<CTexture> iconTex = makeShared<CTexture>();
+    SP<ITexture> iconTex;
 };
 
 struct SHyprbarGlobalStateMirror {
@@ -101,7 +108,7 @@ struct SOverviewTitleTextureCache {
     int          height    = 0;
     int          fontPx    = 0;
     int64_t      textColor = 0;
-    SP<CTexture> texture;
+    SP<ITexture> texture;
 };
 
 static PHLWINDOW getOverviewWindowToShow(const PHLWINDOW& window) {
@@ -166,7 +173,7 @@ static CHyprColor getOverviewTitleBackgroundColor() {
 
 static CHyprColor getOverviewInactiveBorderTitleColor(const PHLWINDOW& window) {
     static auto PINACTIVECOL = CConfigValue<Hyprlang::CUSTOMTYPE>("general:col.inactive_border");
-    auto* const INACTIVECOL  = sc<CGradientValueData*>((PINACTIVECOL.ptr())->getData());
+    auto* const INACTIVECOL  = sc<Config::CGradientValueData*>((PINACTIVECOL.ptr())->getData());
 
     const auto& grad = window->m_ruleApplicator->inactiveBorderColor().valueOr(*INACTIVECOL);
     if (grad.m_colors.empty())
@@ -175,7 +182,7 @@ static CHyprColor getOverviewInactiveBorderTitleColor(const PHLWINDOW& window) {
     return grad.m_colors[0];
 }
 
-static SP<CTexture> createOverviewTitleTexture(const std::string& title, int width, int height, int fontPx, const CHyprColor& textColor) {
+static SP<ITexture> createOverviewTitleTexture(const std::string& title, int width, int height, int fontPx, const CHyprColor& textColor) {
     if (title.empty() || width <= 0 || height <= 0 || fontPx <= 0)
         return nullptr;
 
@@ -230,13 +237,13 @@ static SP<CTexture> createOverviewTitleTexture(const std::string& title, int wid
     cairo_destroy(cairo);
     cairo_surface_flush(surface);
 
-    auto texture = makeShared<CTexture>(DRM_FORMAT_ARGB8888, cairo_image_surface_get_data(surface), cairo_image_surface_get_stride(surface), Vector2D{width, height});
+    auto texture = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, cairo_image_surface_get_data(surface), cairo_image_surface_get_stride(surface), Vector2D{width, height});
     cairo_surface_destroy(surface);
 
     return texture;
 }
 
-static SP<CTexture> getOverviewTitleTexture(const PHLWINDOW& window, const std::string& title, int width, int height, int fontPx, int64_t textColorRaw,
+static SP<ITexture> getOverviewTitleTexture(const PHLWINDOW& window, const std::string& title, int width, int height, int fontPx, int64_t textColorRaw,
                                             const CHyprColor& textColor) {
     static std::unordered_map<uintptr_t, SOverviewTitleTextureCache> TITLETEXTURECACHE;
 
@@ -518,7 +525,7 @@ static void renderOverviewHyprbarDecoration(SOverviewCustomDecorationRenderState
             previousButtonSizes.push_back(button.size);
             button.size *= metrics.renderScale;
             if (button.iconTex && button.iconTex->m_texID != 0)
-                button.iconTex->destroyTexture();
+                button.iconTex.reset();
         }
     }
 
@@ -550,7 +557,7 @@ static void renderOverviewHyprbarDecoration(SOverviewCustomDecorationRenderState
             for (size_t i = 0; i < previousButtonSizes.size() && i < HYPRBARGLOBALSTATE->buttons.size(); ++i) {
                 HYPRBARGLOBALSTATE->buttons[i].size = previousButtonSizes[i];
                 if (HYPRBARGLOBALSTATE->buttons[i].iconTex && HYPRBARGLOBALSTATE->buttons[i].iconTex->m_texID != 0)
-                    HYPRBARGLOBALSTATE->buttons[i].iconTex->destroyTexture();
+                    HYPRBARGLOBALSTATE->buttons[i].iconTex.reset();
             }
         }
         return;
@@ -591,7 +598,7 @@ static void renderOverviewHyprbarDecoration(SOverviewCustomDecorationRenderState
             for (size_t i = 0; i < previousButtonSizes.size() && i < HYPRBARGLOBALSTATE->buttons.size(); ++i) {
                 HYPRBARGLOBALSTATE->buttons[i].size = previousButtonSizes[i];
                 if (HYPRBARGLOBALSTATE->buttons[i].iconTex && HYPRBARGLOBALSTATE->buttons[i].iconTex->m_texID != 0)
-                    HYPRBARGLOBALSTATE->buttons[i].iconTex->destroyTexture();
+                    HYPRBARGLOBALSTATE->buttons[i].iconTex.reset();
             }
         }
     });
@@ -658,8 +665,8 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
 
     static auto PACTIVECOL   = CConfigValue<Hyprlang::CUSTOMTYPE>("general:col.active_border");
     static auto PINACTIVECOL = CConfigValue<Hyprlang::CUSTOMTYPE>("general:col.inactive_border");
-    auto* const ACTIVECOL    = reinterpret_cast<CGradientValueData*>((PACTIVECOL.ptr())->getData());
-    auto* const INACTIVECOL  = reinterpret_cast<CGradientValueData*>((PINACTIVECOL.ptr())->getData());
+    auto* const ACTIVECOL    = reinterpret_cast<Config::CGradientValueData*>((PACTIVECOL.ptr())->getData());
+    auto* const INACTIVECOL  = reinterpret_cast<Config::CGradientValueData*>((PINACTIVECOL.ptr())->getData());
 
     const auto& grad             = selected ? window->m_ruleApplicator->activeBorderColor().valueOr(*ACTIVECOL) : window->m_ruleApplicator->inactiveBorderColor().valueOr(*INACTIVECOL);
 
@@ -764,10 +771,10 @@ static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW
     if (*PINDICATORHEIGHT <= 0)
         return;
 
-    auto* const GROUPCOLACTIVE         = sc<CGradientValueData*>((PGROUPCOLACTIVE.ptr())->getData());
-    auto* const GROUPCOLINACTIVE       = sc<CGradientValueData*>((PGROUPCOLINACTIVE.ptr())->getData());
-    auto* const GROUPCOLACTIVELOCKED   = sc<CGradientValueData*>((PGROUPCOLACTIVELOCKED.ptr())->getData());
-    auto* const GROUPCOLINACTIVELOCKED = sc<CGradientValueData*>((PGROUPCOLINACTIVELOCKED.ptr())->getData());
+    auto* const GROUPCOLACTIVE         = sc<Config::CGradientValueData*>((PGROUPCOLACTIVE.ptr())->getData());
+    auto* const GROUPCOLINACTIVE       = sc<Config::CGradientValueData*>((PGROUPCOLINACTIVE.ptr())->getData());
+    auto* const GROUPCOLACTIVELOCKED   = sc<Config::CGradientValueData*>((PGROUPCOLACTIVELOCKED.ptr())->getData());
+    auto* const GROUPCOLINACTIVELOCKED = sc<Config::CGradientValueData*>((PGROUPCOLINACTIVELOCKED.ptr())->getData());
 
     const bool  groupLocked  = window->m_group->locked() || g_pKeybindManager->m_groupsLocked;
     const auto* colActive    = groupLocked ? GROUPCOLACTIVELOCKED : GROUPCOLACTIVE;
@@ -937,7 +944,7 @@ void renderOverviewWindow(const SRenderParams& params) {
     if (shouldBlurBg) {
         OverviewRender::flushPass(params.monitor);
 
-        const float blurAlpha     = std::sqrt(params.window->m_alpha->value());
+        const float blurAlpha     = std::sqrt(params.window->m_alpha.value());
         const int   blurRounding  = fullscreen ? 0 : sc<int>(std::round(getHyprlandDecorationRounding() * metrics.pxScale));
         const float roundingPower = fullscreen ? 2.F : getHyprlandDecorationRoundingPower();
         OverviewRender::renderBlur(params.monitor, params.windowBox, blurRounding, roundingPower, blurAlpha,

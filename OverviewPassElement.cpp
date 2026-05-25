@@ -14,11 +14,16 @@
 #include <utility>
 #include <vector>
 #define private public
+#define protected public
+#include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/helpers/math/Math.hpp>
+#undef protected
 #undef private
 #include <hyprutils/utils/ScopeGuard.hpp>
 #include "IOverview.hpp"
+
+using Render::GL::g_pHyprOpenGL;
 
 static CRegion roundedRectRegion(const CBox& box, int rounding, float roundingPower) {
     const auto ROUNDEDBOX = box.copy().round();
@@ -87,8 +92,9 @@ CScrollOverviewPassElement::CScrollOverviewPassElement() {
     ;
 }
 
-void CScrollOverviewPassElement::draw(const CRegion& damage) {
+std::vector<UP<IPassElement>> CScrollOverviewPassElement::draw() {
     g_pScrollOverview->fullRender();
+    return {};
 }
 
 bool CScrollOverviewPassElement::needsLiveBlur() {
@@ -117,20 +123,22 @@ COverviewShadowPassElement::COverviewShadowPassElement(const SData& data_) : dat
     ;
 }
 
-void COverviewShadowPassElement::draw(const CRegion& damage) {
+std::vector<UP<IPassElement>> COverviewShadowPassElement::draw() {
+    const auto& damage = g_pHyprRenderer->m_renderData.damage;
+
     if (!data.monitor || data.fullBox.width < 1 || data.fullBox.height < 1 || data.range <= 0 || data.color.a == 0.F || data.alpha <= 0.F)
-        return;
+        return {};
 
     CRegion shadowDamage = damage.copy().intersect(data.fullBox);
     if (data.ignoreWindow)
         shadowDamage.subtract(roundedRectRegion(data.cutoutBox, data.rounding + 1, data.roundingPower));
 
     if (shadowDamage.empty())
-        return;
+        return {};
 
-    const auto SAVEDDAMAGE = g_pHyprOpenGL->m_renderData.damage;
-    g_pHyprOpenGL->m_renderData.damage = shadowDamage;
-    auto restoreDamage = Hyprutils::Utils::CScopeGuard([SAVEDDAMAGE] { g_pHyprOpenGL->m_renderData.damage = SAVEDDAMAGE; });
+    const auto SAVEDDAMAGE = g_pHyprRenderer->m_renderData.damage;
+    g_pHyprRenderer->m_renderData.damage = shadowDamage;
+    auto restoreDamage = Hyprutils::Utils::CScopeGuard([SAVEDDAMAGE] { g_pHyprRenderer->m_renderData.damage = SAVEDDAMAGE; });
 
     auto color = data.color;
     color.a *= data.alpha;
@@ -149,6 +157,8 @@ void COverviewShadowPassElement::draw(const CRegion& damage) {
         g_pHyprOpenGL->renderRect(data.fullBox, color, {.damage = &shadowDamage, .round = data.rounding, .roundingPower = data.roundingPower});
     else
         g_pHyprOpenGL->renderRoundedShadow(data.fullBox, data.rounding, data.roundingPower, data.range, color, 1.F);
+
+    return {};
 }
 
 bool COverviewShadowPassElement::needsLiveBlur() {
