@@ -43,7 +43,7 @@ namespace OverviewWindow {
 namespace {
 
 static bool getHyprlandBlurNewOptimizations() {
-    static auto PNEWOPTIMIZATIONS = CConfigValue<Config::INTEGER>("decoration:blur:new_optimizations");
+    static auto PNEWOPTIMIZATIONS = CConfigValue<Config::BOOL>("decoration:blur:new_optimizations");
     return *PNEWOPTIMIZATIONS;
 }
 
@@ -134,18 +134,18 @@ static bool shouldShowOverviewWindow(const PHLWINDOW& window) {
 }
 
 static bool getOverviewTitleEnabled() {
-    static auto PENABLED = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:enabled");
-    return *PENABLED;
+    static auto* const* PENABLED = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:enabled")->getDataStaticPtr();
+    return **PENABLED;
 }
 
 static int getOverviewTitleFontSize() {
-    static auto PFONTSIZE = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:font_size");
-    return std::max<int>(1, *PFONTSIZE);
+    static auto* const* PFONTSIZE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:font_size")->getDataStaticPtr();
+    return std::max<int>(1, **PFONTSIZE);
 }
 
 static float getOverviewConfiguredScale() {
-    static auto PSCALE = CConfigValue<Config::FLOAT>("plugin:scrolloverview:scale");
-    return std::clamp(*PSCALE, 0.1F, 0.9F);
+    static auto* const* PSCALE = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:scale")->getDataStaticPtr();
+    return std::clamp(**PSCALE, 0.1F, 0.9F);
 }
 
 static float getOverviewTitleAlpha(float renderScale, bool closing, float targetOpacity) {
@@ -159,16 +159,16 @@ static float getOverviewTitleAlpha(float renderScale, bool closing, float target
 }
 
 static CHyprColor getOverviewTitleTextColor(int64_t* rawValue = nullptr) {
-    static auto PTEXTCOLOR = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:text_color");
+    static auto* const* PTEXTCOLOR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:text_color")->getDataStaticPtr();
     if (rawValue)
-        *rawValue = *PTEXTCOLOR;
+        *rawValue = **PTEXTCOLOR;
 
-    return CHyprColor(sc<uint64_t>(*PTEXTCOLOR));
+    return CHyprColor(sc<uint64_t>(**PTEXTCOLOR));
 }
 
 static CHyprColor getOverviewTitleBackgroundColor() {
-    static auto PBACKGROUNDCOLOR = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:background_color");
-    return CHyprColor(sc<uint64_t>(*PBACKGROUNDCOLOR));
+    static auto* const* PBACKGROUNDCOLOR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:background_color")->getDataStaticPtr();
+    return CHyprColor(sc<uint64_t>(**PBACKGROUNDCOLOR));
 }
 
 static CHyprColor getOverviewInactiveBorderTitleColor(const PHLWINDOW& window) {
@@ -608,16 +608,16 @@ static void renderOverviewWindowShadow(PHLMONITOR monitor, const PHLWINDOW& wind
     if (!monitor || !window || (!window->m_isMapped && !window->m_fadingOut))
         return;
 
-    static auto PSHADOWS            = CConfigValue<Hyprlang::INT>("decoration:shadow:enabled");
+    static auto PSHADOWS            = CConfigValue<Config::BOOL>("decoration:shadow:enabled");
     static auto PSHADOWSIZE         = CConfigValue<Hyprlang::INT>("decoration:shadow:range");
-    static auto PSHADOWSHARP        = CConfigValue<Hyprlang::INT>("decoration:shadow:sharp");
-    static auto PSHADOWIGNOREWINDOW = CConfigValue<Hyprlang::INT>("decoration:shadow:ignore_window");
+    static auto PSHADOWSHARP        = CConfigValue<Config::BOOL>("decoration:shadow:sharp");
+    static auto PSHADOWIGNOREWINDOW = CConfigValue<Config::BOOL>("decoration:shadow:ignore_window");
     static auto PSHADOWSCALE        = CConfigValue<Hyprlang::FLOAT>("decoration:shadow:scale");
     static auto PSHADOWOFFSET       = CConfigValue<Hyprlang::VEC2>("decoration:shadow:offset");
     static auto PSHADOWCOL          = CConfigValue<Hyprlang::INT>("decoration:shadow:color");
     static auto PSHADOWCOLINACTIVE  = CConfigValue<Hyprlang::INT>("decoration:shadow:color_inactive");
 
-    if (*PSHADOWS != 1 || *PSHADOWSIZE <= 0)
+    if (!*PSHADOWS || *PSHADOWSIZE <= 0)
         return;
 
     if (window->isX11OverrideRedirect() || window->m_X11DoesntWantBorders || !window->m_ruleApplicator->decorate().valueOrDefault() ||
