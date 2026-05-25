@@ -816,6 +816,14 @@ static void moveOverviewTargetNextToWindow(const SP<Layout::ITarget>& target, co
 CScrollOverview::~CScrollOverview() {
     g_pHyprOpenGL->makeEGLCurrent();
     stopRealtimePreviewTimer();
+    if (scale)
+        scale->resetAllCallbacks();
+    if (viewOffset)
+        viewOffset->resetAllCallbacks();
+    if (workspaceInsertProgress)
+        workspaceInsertProgress->resetAllCallbacks();
+    if (workspaceInsertFadeProgress)
+        workspaceInsertFadeProgress->resetAllCallbacks();
     if (backdropBlurFB)
         backdropBlurFB->release();
     const auto MONITOR = pMonitor.lock();
