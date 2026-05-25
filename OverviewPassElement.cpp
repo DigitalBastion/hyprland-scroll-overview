@@ -144,16 +144,6 @@ std::vector<UP<IPassElement>> COverviewShadowPassElement::draw() {
     auto color = data.color;
     color.a *= data.alpha;
 
-    static auto PGLOBALRENDERPOWER = CConfigValue<Config::INTEGER>("decoration:shadow:render_power");
-
-    const auto PREVRENDERPOWER = data.renderPower > 0 ? std::optional<int>(sc<int>(*PGLOBALRENDERPOWER)) : std::nullopt;
-    if (data.renderPower > 0)
-        *PGLOBALRENDERPOWER.ptr() = data.renderPower;
-    auto restoreRenderPower = Hyprutils::Utils::CScopeGuard([PREVRENDERPOWER] {
-        if (PREVRENDERPOWER)
-            *PGLOBALRENDERPOWER.ptr() = *PREVRENDERPOWER;
-    });
-
     if (data.sharp)
         g_pHyprOpenGL->renderRect(data.fullBox, color, {.damage = &shadowDamage, .round = data.rounding, .roundingPower = data.roundingPower});
     else

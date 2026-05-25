@@ -560,20 +560,15 @@ static SOverviewShadowConfig getOverviewShadowConfig() {
     static auto* const* PIGNORE      = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:ignore_window")->getDataStaticPtr();
     static auto* const* PCOLOR       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:color")->getDataStaticPtr();
 
-    static auto PGLOBALRANGE       = CConfigValue<Config::INTEGER>("decoration:shadow:range");
-    static auto PGLOBALRENDERPOWER = CConfigValue<Config::INTEGER>("decoration:shadow:render_power");
-    static auto PGLOBALIGNORE      = CConfigValue<Config::BOOL>("decoration:shadow:ignore_window");
-    static auto PGLOBALCOLOR       = CConfigValue<Config::INTEGER>("decoration:shadow:color");
-
     const auto pluginRange       = **PRANGE;
     const auto pluginRenderPower = **PRENDERPOWER;
     const auto pluginIgnore      = **PIGNORE;
     const auto pluginColor       = **PCOLOR;
 
-    const int  range       = pluginRange >= 0 ? pluginRange : *PGLOBALRANGE;
-    const int  renderPower = pluginRenderPower >= 0 ? pluginRenderPower : *PGLOBALRENDERPOWER;
-    const int  ignore      = pluginIgnore >= 0 ? pluginIgnore : *PGLOBALIGNORE;
-    const auto color       = pluginColor >= 0 ? pluginColor : *PGLOBALCOLOR;
+    const int  range       = pluginRange >= 0 ? pluginRange : 0;
+    const int  renderPower = pluginRenderPower >= 0 ? pluginRenderPower : 1;
+    const int  ignore      = pluginIgnore >= 0 ? pluginIgnore : 1;
+    const auto color       = pluginColor >= 0 ? pluginColor : 0x66000000;
 
     return {
         .enabled      = !!**PENABLED,
@@ -900,7 +895,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
         info.cancelled = true;
 
         if (dragPointerDown && dragPendingWindow) {
-            static auto PDRAGTHRESHOLD = CConfigValue<Hyprlang::INT>("binds:drag_threshold");
+            static auto PDRAGTHRESHOLD = CConfigValue<Config::INTEGER>("binds:drag_threshold");
 
             const float DRAGTHRESHOLD = *PDRAGTHRESHOLD * (pMonitor ? pMonitor->m_scale : 1.F);
             if (!dragActiveWindow && dragStartMouseLocal.distanceSq(lastMousePosLocal) > std::pow(DRAGTHRESHOLD, 2))
@@ -911,7 +906,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
         }
 
         if (resizePointerDown && resizePendingWindow) {
-            static auto PDRAGTHRESHOLD = CConfigValue<Hyprlang::INT>("binds:drag_threshold");
+            static auto PDRAGTHRESHOLD = CConfigValue<Config::INTEGER>("binds:drag_threshold");
 
             const float DRAGTHRESHOLD = *PDRAGTHRESHOLD * (pMonitor ? pMonitor->m_scale : 1.F);
             if (!resizeActiveWindow && resizeStartMouseLocal.distanceSq(lastMousePosLocal) > std::pow(DRAGTHRESHOLD, 2))

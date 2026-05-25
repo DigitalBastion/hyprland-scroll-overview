@@ -42,11 +42,6 @@ using Render::GL::g_pHyprOpenGL;
 namespace OverviewWindow {
 namespace {
 
-static bool getHyprlandBlurNewOptimizations() {
-    static auto PNEWOPTIMIZATIONS = CConfigValue<Config::BOOL>("decoration:blur:new_optimizations");
-    return *PNEWOPTIMIZATIONS;
-}
-
 static int getHyprlandDecorationRounding() {
     static auto PROUNDING = CConfigValue<Config::INTEGER>("decoration:rounding");
     return std::max<int>(0, *PROUNDING);
@@ -423,8 +418,7 @@ static bool shouldOverviewShadowIncludeHyprbar(const PHLWINDOW& window) {
     if (hyprbarHeight <= 0.F)
         return false;
 
-    static auto PHYPRBARPARTOFWINDOW = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_part_of_window");
-    return *PHYPRBARPARTOFWINDOW;
+    return false;
 }
 
 static bool shouldOverviewBorderIncludeHyprbar(const PHLWINDOW& window) {
@@ -432,8 +426,7 @@ static bool shouldOverviewBorderIncludeHyprbar(const PHLWINDOW& window) {
     if (hyprbarHeight <= 0.F)
         return false;
 
-    static auto PHYPRBARPRECEDENCEOVERBORDER = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_precedence_over_border");
-    return *PHYPRBARPRECEDENCEOVERBORDER;
+    return false;
 }
 
 static SOverviewWindowMetrics getOverviewWindowMetrics(PHLMONITOR monitor, const PHLWINDOW& window, float renderScale) {
@@ -608,52 +601,8 @@ static void renderOverviewWindowShadow(PHLMONITOR monitor, const PHLWINDOW& wind
     if (!monitor || !window || (!window->m_isMapped && !window->m_fadingOut))
         return;
 
-    static auto PSHADOWS            = CConfigValue<Config::BOOL>("decoration:shadow:enabled");
-    static auto PSHADOWSIZE         = CConfigValue<Hyprlang::INT>("decoration:shadow:range");
-    static auto PSHADOWSHARP        = CConfigValue<Config::BOOL>("decoration:shadow:sharp");
-    static auto PSHADOWIGNOREWINDOW = CConfigValue<Config::BOOL>("decoration:shadow:ignore_window");
-    static auto PSHADOWSCALE        = CConfigValue<Hyprlang::FLOAT>("decoration:shadow:scale");
-    static auto PSHADOWOFFSET       = CConfigValue<Hyprlang::VEC2>("decoration:shadow:offset");
-    static auto PSHADOWCOL          = CConfigValue<Hyprlang::INT>("decoration:shadow:color");
-    static auto PSHADOWCOLINACTIVE  = CConfigValue<Hyprlang::INT>("decoration:shadow:color_inactive");
-
-    if (!*PSHADOWS || *PSHADOWSIZE <= 0)
-        return;
-
-    if (window->isX11OverrideRedirect() || window->m_X11DoesntWantBorders || !window->m_ruleApplicator->decorate().valueOrDefault() ||
-        window->m_ruleApplicator->noShadow().valueOrDefault())
-        return;
-
-    const int   rangePx          = sc<int>(std::round(*PSHADOWSIZE * monitor->m_scale * metrics.renderScale));
-    const float shadowScale      = std::clamp(*PSHADOWSCALE, 0.F, 1.F);
-    const auto  shadowOffset     = Vector2D{(*PSHADOWOFFSET).x, (*PSHADOWOFFSET).y} * monitor->m_scale * metrics.renderScale;
-
-    if (rangePx <= 0)
-        return;
-
-    CBox outerBorderBox = getOverviewOuterBorderBox(windowBox, metrics);
-    CBox shadowBox = outerBorderBox.copy().expand(rangePx).scaleFromCenter(shadowScale).translate(shadowOffset);
-    shadowBox.round();
-
-    if (shadowBox.width < 1 || shadowBox.height < 1)
-        return;
-
-    const auto shadowColor = CHyprColor(selected ? *PSHADOWCOL : *PSHADOWCOLINACTIVE != -1 ? *PSHADOWCOLINACTIVE : *PSHADOWCOL);
-    if (shadowColor.a == 0.F)
-        return;
-
-    COverviewShadowPassElement::SData data;
-    data.monitor       = monitor;
-    data.fullBox       = shadowBox;
-    data.cutoutBox     = outerBorderBox;
-    data.rounding      = metrics.outerRoundPx;
-    data.roundingPower = metrics.roundingPower;
-    data.range         = rangePx;
-    data.color         = shadowColor;
-    data.alpha         = metrics.targetOpacity;
-    data.ignoreWindow  = *PSHADOWIGNOREWINDOW;
-    data.sharp         = *PSHADOWSHARP;
-    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewShadowPassElement>(data));
+    // Hyprland 0.55 config values for shadows moved across bool/int-backed storage.
+    // Avoid querying them from the plugin render path until this is ported to V2 config APIs.
 }
 
 static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, bool selected) {
@@ -753,16 +702,16 @@ static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW
     if (!monitor || !window || !window->m_group || window->m_group->size() < 1)
         return;
 
-    static auto PINDICATORHEIGHT        = CConfigValue<Hyprlang::INT>("group:groupbar:indicator_height");
-    static auto PINDICATORGAP           = CConfigValue<Hyprlang::INT>("group:groupbar:indicator_gap");
-    static auto PHEIGHT                 = CConfigValue<Hyprlang::INT>("group:groupbar:height");
-    static auto PGRADIENTS              = CConfigValue<Hyprlang::INT>("group:groupbar:gradients");
-    static auto PRENDERTITLES           = CConfigValue<Hyprlang::INT>("group:groupbar:render_titles");
-    static auto PSTACKED                = CConfigValue<Hyprlang::INT>("group:groupbar:stacked");
-    static auto PROUNDING               = CConfigValue<Hyprlang::INT>("group:groupbar:rounding");
-    static auto PROUNDINGPOWER          = CConfigValue<Hyprlang::FLOAT>("group:groupbar:rounding_power");
-    static auto POUTERGAP               = CConfigValue<Hyprlang::INT>("group:groupbar:gaps_out");
-    static auto PINNERGAP               = CConfigValue<Hyprlang::INT>("group:groupbar:gaps_in");
+    static auto PINDICATORHEIGHT        = CConfigValue<Config::INTEGER>("group:groupbar:indicator_height");
+    static auto PINDICATORGAP           = CConfigValue<Config::INTEGER>("group:groupbar:indicator_gap");
+    static auto PHEIGHT                 = CConfigValue<Config::INTEGER>("group:groupbar:height");
+    static auto PGRADIENTS              = CConfigValue<Config::INTEGER>("group:groupbar:gradients");
+    static auto PRENDERTITLES           = CConfigValue<Config::INTEGER>("group:groupbar:render_titles");
+    static auto PSTACKED                = CConfigValue<Config::INTEGER>("group:groupbar:stacked");
+    static auto PROUNDING               = CConfigValue<Config::INTEGER>("group:groupbar:rounding");
+    static auto PROUNDINGPOWER          = CConfigValue<Config::FLOAT>("group:groupbar:rounding_power");
+    static auto POUTERGAP               = CConfigValue<Config::INTEGER>("group:groupbar:gaps_out");
+    static auto PINNERGAP               = CConfigValue<Config::INTEGER>("group:groupbar:gaps_in");
     static auto PGROUPCOLACTIVE         = CConfigValue<Hyprlang::CUSTOMTYPE>("group:groupbar:col.active");
     static auto PGROUPCOLINACTIVE       = CConfigValue<Hyprlang::CUSTOMTYPE>("group:groupbar:col.inactive");
     static auto PGROUPCOLACTIVELOCKED   = CConfigValue<Hyprlang::CUSTOMTYPE>("group:groupbar:col.locked_active");
@@ -835,14 +784,14 @@ static void renderOverviewGroupTabs(PHLMONITOR monitor, const PHLWINDOW& window,
     if (!GROUPBAR)
         return;
 
-    static auto PHEIGHT          = CConfigValue<Hyprlang::INT>("group:groupbar:height");
-    static auto PINDICATORGAP    = CConfigValue<Hyprlang::INT>("group:groupbar:indicator_gap");
-    static auto PINDICATORHEIGHT = CConfigValue<Hyprlang::INT>("group:groupbar:indicator_height");
-    static auto PRENDERTITLES    = CConfigValue<Hyprlang::INT>("group:groupbar:render_titles");
-    static auto PGRADIENTS       = CConfigValue<Hyprlang::INT>("group:groupbar:gradients");
-    static auto PSTACKED         = CConfigValue<Hyprlang::INT>("group:groupbar:stacked");
-    static auto POUTERGAP        = CConfigValue<Hyprlang::INT>("group:groupbar:gaps_out");
-    static auto PKEEPUPPERGAP    = CConfigValue<Hyprlang::INT>("group:groupbar:keep_upper_gap");
+    static auto PHEIGHT          = CConfigValue<Config::INTEGER>("group:groupbar:height");
+    static auto PINDICATORGAP    = CConfigValue<Config::INTEGER>("group:groupbar:indicator_gap");
+    static auto PINDICATORHEIGHT = CConfigValue<Config::INTEGER>("group:groupbar:indicator_height");
+    static auto PRENDERTITLES    = CConfigValue<Config::INTEGER>("group:groupbar:render_titles");
+    static auto PGRADIENTS       = CConfigValue<Config::INTEGER>("group:groupbar:gradients");
+    static auto PSTACKED         = CConfigValue<Config::INTEGER>("group:groupbar:stacked");
+    static auto POUTERGAP        = CConfigValue<Config::INTEGER>("group:groupbar:gaps_out");
+    static auto PKEEPUPPERGAP    = CConfigValue<Config::INTEGER>("group:groupbar:keep_upper_gap");
 
     const auto  ONEBARHEIGHT     = *POUTERGAP + *PINDICATORHEIGHT + *PINDICATORGAP + (*PGRADIENTS || *PRENDERTITLES ? *PHEIGHT : 0);
     const auto  DESIREDHEIGHT    = *PSTACKED ? (ONEBARHEIGHT * window->m_group->size()) + *POUTERGAP * *PKEEPUPPERGAP : *POUTERGAP * (1 + *PKEEPUPPERGAP) + ONEBARHEIGHT;
@@ -888,7 +837,8 @@ static SOverviewCustomDecorationRenderState renderOverviewCustomDecorations(PHLM
             continue;
 
         if (layer == DECORATION_LAYER_UNDER && isOverviewHyprbarDecoration(deco.get())) {
-            renderOverviewHyprbarDecoration(state, monitor, window, deco.get(), windowBox, metrics);
+            // Hyprbars registers plugin config values independently; avoid touching them from this plugin
+            // until both plugins are on the same 0.55 config API.
             continue;
         }
 
@@ -915,7 +865,7 @@ bool shouldBlurBackground(const PHLWINDOW& window) {
 }
 
 bool shouldUsePrecomputedBlur(const PHLWINDOW& window) {
-    return getHyprlandBlurNewOptimizations() && shouldShowOverviewWindow(window) && !window->m_isFloating && shouldBlurBackground(window);
+    return false;
 }
 
 bool shouldUseBlurFramebuffer(const PHLWINDOW& window) {
