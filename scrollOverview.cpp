@@ -554,24 +554,29 @@ struct SOverviewShadowConfig {
 };
 
 static SOverviewShadowConfig getOverviewShadowConfig() {
-    static auto* const* PENABLED     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:enabled")->getDataStaticPtr();
-    static auto* const* PRANGE       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:range")->getDataStaticPtr();
-    static auto* const* PRENDERPOWER = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:render_power")->getDataStaticPtr();
-    static auto* const* PIGNORE      = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:ignore_window")->getDataStaticPtr();
-    static auto* const* PCOLOR       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:color")->getDataStaticPtr();
+    static auto PENABLED     = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:enabled");
+    static auto PRANGE       = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:range");
+    static auto PRENDERPOWER = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:render_power");
+    static auto PIGNORE      = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:ignore_window");
+    static auto PCOLOR       = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:color");
 
-    static auto* const* PGLOBALRANGE       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "decoration:shadow:range")->getDataStaticPtr();
-    static auto* const* PGLOBALRENDERPOWER = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "decoration:shadow:render_power")->getDataStaticPtr();
-    static auto* const* PGLOBALIGNORE      = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "decoration:shadow:ignore_window")->getDataStaticPtr();
-    static auto* const* PGLOBALCOLOR       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "decoration:shadow:color")->getDataStaticPtr();
+    static auto PGLOBALRANGE       = CConfigValue<Config::INTEGER>("decoration:shadow:range");
+    static auto PGLOBALRENDERPOWER = CConfigValue<Config::INTEGER>("decoration:shadow:render_power");
+    static auto PGLOBALIGNORE      = CConfigValue<Config::INTEGER>("decoration:shadow:ignore_window");
+    static auto PGLOBALCOLOR       = CConfigValue<Config::INTEGER>("decoration:shadow:color");
 
-    const int range       = **PRANGE >= 0 ? **PRANGE : **PGLOBALRANGE;
-    const int renderPower = **PRENDERPOWER >= 0 ? **PRENDERPOWER : **PGLOBALRENDERPOWER;
-    const int ignore      = **PIGNORE >= 0 ? **PIGNORE : **PGLOBALIGNORE;
-    const auto color      = **PCOLOR >= 0 ? **PCOLOR : **PGLOBALCOLOR;
+    const auto pluginRange       = *PRANGE;
+    const auto pluginRenderPower = *PRENDERPOWER;
+    const auto pluginIgnore      = *PIGNORE;
+    const auto pluginColor       = *PCOLOR;
+
+    const int  range       = pluginRange >= 0 ? pluginRange : *PGLOBALRANGE;
+    const int  renderPower = pluginRenderPower >= 0 ? pluginRenderPower : *PGLOBALRENDERPOWER;
+    const int  ignore      = pluginIgnore >= 0 ? pluginIgnore : *PGLOBALIGNORE;
+    const auto color       = pluginColor >= 0 ? pluginColor : *PGLOBALCOLOR;
 
     return {
-        .enabled      = !!**PENABLED,
+        .enabled      = !!*PENABLED,
         .range        = std::max(0, range),
         .renderPower  = std::clamp(renderPower, 1, 4),
         .ignoreWindow = !!ignore,
