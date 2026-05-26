@@ -166,16 +166,6 @@ static CHyprColor getOverviewTitleBackgroundColor() {
     return CHyprColor(sc<uint64_t>(**PBACKGROUNDCOLOR));
 }
 
-static CHyprColor getOverviewInactiveBorderTitleColor(const PHLWINDOW& window) {
-    const Config::CGradientValueData fallback{getOverviewTitleBackgroundColor()};
-
-    const auto grad = window->m_ruleApplicator->inactiveBorderColor().valueOr(fallback);
-    if (grad.m_colors.empty())
-        return getOverviewTitleBackgroundColor();
-
-    return grad.m_colors[0];
-}
-
 static SP<ITexture> createOverviewTitleTexture(const std::string& title, int width, int height, int fontPx, const CHyprColor& textColor) {
     if (title.empty() || width <= 0 || height <= 0 || fontPx <= 0)
         return nullptr;
@@ -665,7 +655,7 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     if (textBox.empty())
         return;
 
-    CHyprColor backgroundColor = getOverviewInactiveBorderTitleColor(window);
+    CHyprColor backgroundColor = getOverviewTitleBackgroundColor();
     backgroundColor.a = std::max(backgroundColor.a, 0.85);
     backgroundColor.a *= titleAlpha;
     if (backgroundColor.a > 0.F) {
