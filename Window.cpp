@@ -892,6 +892,10 @@ void renderOverviewWindow(const SRenderParams& params) {
                                    params.usePrecomputedBlur || params.window->m_ruleApplicator->xray().valueOr(false));
     }
 
+    const bool savedNoSimplify = g_pHyprRenderer->m_renderData.noSimplify;
+    g_pHyprRenderer->m_renderData.noSimplify = true;
+    auto restoreNoSimplify = Hyprutils::Utils::CScopeGuard([savedNoSimplify] { g_pHyprRenderer->m_renderData.noSimplify = savedNoSimplify; });
+
     SRenderModifData modif;
     modif.modifs.emplace_back(SRenderModifData::RMOD_TYPE_SCALE, params.renderScale);
     modif.modifs.emplace_back(SRenderModifData::RMOD_TYPE_TRANSLATE, params.windowBox.pos());
