@@ -24,6 +24,7 @@
 #include <hyprutils/utils/ScopeGuard.hpp>
 #include "IOverview.hpp"
 
+using Render::GL::CHyprOpenGLImpl;
 using Render::GL::g_pHyprOpenGL;
 
 static CRegion roundedRectRegion(const CBox& box, int rounding, float roundingPower) {
