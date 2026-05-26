@@ -14,6 +14,11 @@
 #include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
 #include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
 
+extern "C" {
+#include <lauxlib.h>
+#include <lua.h>
+}
+
 #include <hyprutils/string/ConstVarList.hpp>
 using namespace Hyprutils::String;
 
@@ -218,6 +223,20 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
     return {};
 }
 
+static int luaOverview(lua_State* L) {
+    const std::string arg    = luaL_optstring(L, 1, "toggle");
+    const auto        result = onOverviewDispatcher(arg);
+
+    if (!result.success) {
+        lua_pushnil(L);
+        lua_pushstring(L, result.error.c_str());
+        return 2;
+    }
+
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static void failNotif(const std::string& reason) {
     HyprlandAPI::addNotification(SCROLLOVERVIEW_HANDLE, "[scrolloverview] Failure in initialization: " + reason, CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
 }
@@ -379,6 +398,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     });
 
     HyprlandAPI::addDispatcherV2(SCROLLOVERVIEW_HANDLE, "scrolloverview:overview", ::onOverviewDispatcher);
+    HyprlandAPI::addLuaFunction(SCROLLOVERVIEW_HANDLE, "scrolloverview", "overview", ::luaOverview);
 
     HyprlandAPI::addConfigKeyword(SCROLLOVERVIEW_HANDLE, "scrolloverview-gesture", ::overviewGestureKeyword, {});
 
