@@ -2358,41 +2358,56 @@ void CScrollOverview::applyInputConfigOverrides() {
     if (inputConfigOverridden)
         return;
 
-    static auto* const* PNOWARPS                = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:no_warps")->getDataStaticPtr();
-    static auto* const* PWARPONCHANGEWORKSPACE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:warp_on_change_workspace")->getDataStaticPtr();
-    static auto* const* PWARPONTOGGLESPECIAL   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:warp_on_toggle_special")->getDataStaticPtr();
-    static auto* const* PWARPBACKAFTERINPUT    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:warp_back_after_non_mouse_input")->getDataStaticPtr();
-    static auto* const* PFOLLOWMOUSE           = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "input:follow_mouse")->getDataStaticPtr();
+    const auto readConfigInt = [](const std::string& name) -> Config::INTEGER {
+        const CConfigValue<Config::INTEGER> value{name};
+        return value.good() ? *value : 0;
+    };
 
-    previousNoWarps                    = **PNOWARPS;
-    previousWarpOnChangeWorkspace      = **PWARPONCHANGEWORKSPACE;
-    previousWarpOnToggleSpecial        = **PWARPONTOGGLESPECIAL;
-    previousWarpBackAfterNonMouseInput = **PWARPBACKAFTERINPUT;
-    previousFollowMouse   = **PFOLLOWMOUSE;
+    const auto writeConfigInt = [](const std::string& name, Config::INTEGER value) {
+        const auto reply = Config::mgr()->getConfigValue(name);
+        if (!reply.dataptr || !*reply.dataptr || !reply.type)
+            return;
+
+        if (*reply.type == typeid(bool))
+            **(bool* const*)reply.dataptr = value != 0;
+        else if (*reply.type == typeid(Config::INTEGER))
+            **(Config::INTEGER* const*)reply.dataptr = value;
+    };
+
+    previousNoWarps                    = readConfigInt("cursor:no_warps");
+    previousWarpOnChangeWorkspace      = readConfigInt("cursor:warp_on_change_workspace");
+    previousWarpOnToggleSpecial        = readConfigInt("cursor:warp_on_toggle_special");
+    previousWarpBackAfterNonMouseInput = readConfigInt("cursor:warp_back_after_non_mouse_input");
+    previousFollowMouse                = readConfigInt("input:follow_mouse");
     inputConfigOverridden = true;
 
-    **PNOWARPS                = 1;
-    **PWARPONCHANGEWORKSPACE = 0;
-    **PWARPONTOGGLESPECIAL   = 0;
-    **PWARPBACKAFTERINPUT    = 0;
-    **PFOLLOWMOUSE           = 0;
+    writeConfigInt("cursor:no_warps", 1);
+    writeConfigInt("cursor:warp_on_change_workspace", 0);
+    writeConfigInt("cursor:warp_on_toggle_special", 0);
+    writeConfigInt("cursor:warp_back_after_non_mouse_input", 0);
+    writeConfigInt("input:follow_mouse", 0);
 }
 
 void CScrollOverview::restoreInputConfigOverrides() {
     if (!inputConfigOverridden)
         return;
 
-    static auto* const* PNOWARPS                = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:no_warps")->getDataStaticPtr();
-    static auto* const* PWARPONCHANGEWORKSPACE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:warp_on_change_workspace")->getDataStaticPtr();
-    static auto* const* PWARPONTOGGLESPECIAL   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:warp_on_toggle_special")->getDataStaticPtr();
-    static auto* const* PWARPBACKAFTERINPUT    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "cursor:warp_back_after_non_mouse_input")->getDataStaticPtr();
-    static auto* const* PFOLLOWMOUSE           = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "input:follow_mouse")->getDataStaticPtr();
+    const auto writeConfigInt = [](const std::string& name, Config::INTEGER value) {
+        const auto reply = Config::mgr()->getConfigValue(name);
+        if (!reply.dataptr || !*reply.dataptr || !reply.type)
+            return;
 
-    **PNOWARPS                = previousNoWarps;
-    **PWARPONCHANGEWORKSPACE = previousWarpOnChangeWorkspace;
-    **PWARPONTOGGLESPECIAL   = previousWarpOnToggleSpecial;
-    **PWARPBACKAFTERINPUT    = previousWarpBackAfterNonMouseInput;
-    **PFOLLOWMOUSE           = previousFollowMouse;
+        if (*reply.type == typeid(bool))
+            **(bool* const*)reply.dataptr = value != 0;
+        else if (*reply.type == typeid(Config::INTEGER))
+            **(Config::INTEGER* const*)reply.dataptr = value;
+    };
+
+    writeConfigInt("cursor:no_warps", previousNoWarps);
+    writeConfigInt("cursor:warp_on_change_workspace", previousWarpOnChangeWorkspace);
+    writeConfigInt("cursor:warp_on_toggle_special", previousWarpOnToggleSpecial);
+    writeConfigInt("cursor:warp_back_after_non_mouse_input", previousWarpBackAfterNonMouseInput);
+    writeConfigInt("input:follow_mouse", previousFollowMouse);
 
     inputConfigOverridden = false;
 }
