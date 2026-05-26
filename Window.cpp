@@ -163,7 +163,12 @@ static CHyprColor getOverviewTitleTextColor(int64_t* rawValue = nullptr) {
 
 static CHyprColor getOverviewTitleBackgroundColor() {
     static auto* const* PBACKGROUNDCOLOR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:background_color")->getDataStaticPtr();
-    return CHyprColor(sc<uint64_t>(**PBACKGROUNDCOLOR));
+
+    const auto rawColor = sc<uint64_t>(**PBACKGROUNDCOLOR);
+    if ((rawColor & 0xFF000000) == 0 && (rawColor & 0x000000FF) != 0)
+        return CHyprColor(((rawColor & 0x000000FF) << 24) | ((rawColor & 0xFFFFFF00) >> 8));
+
+    return CHyprColor(rawColor);
 }
 
 static SP<ITexture> createOverviewTitleTexture(const std::string& title, int width, int height, int fontPx, const CHyprColor& textColor) {

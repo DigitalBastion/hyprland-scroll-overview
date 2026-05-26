@@ -395,7 +395,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:enabled", Hyprlang::INT{1});
     HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:font_size", Hyprlang::INT{32});
     HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:text_color", Hyprlang::INT{0xFFFFFFFF});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:background_color", Hyprlang::INT{0x00000099});
+    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:background_color", Hyprlang::INT{0x99000000});
 
     HyprlandAPI::reloadConfig();
 
