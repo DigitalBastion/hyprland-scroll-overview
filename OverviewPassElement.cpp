@@ -171,3 +171,48 @@ std::optional<CBox> COverviewShadowPassElement::boundingBox() {
 CRegion COverviewShadowPassElement::opaqueRegion() {
     return {};
 }
+
+COverviewTitlePassElement::COverviewTitlePassElement(const SData& data_) : data(data_) {
+    ;
+}
+
+std::vector<UP<IPassElement>> COverviewTitlePassElement::draw() {
+    const auto MONITOR = data.monitor.lock();
+    if (!MONITOR || data.alpha <= 0.F)
+        return {};
+
+    CRegion damage{CBox{{}, MONITOR->m_transformedSize}};
+
+    if (data.backgroundColor.a > 0.F)
+        g_pHyprOpenGL->renderRect(data.titleBox, data.backgroundColor, {.damage = &damage});
+
+    if (data.texture) {
+        CHyprOpenGLImpl::STextureRenderData renderData;
+        renderData.damage   = &damage;
+        renderData.a        = data.alpha;
+        renderData.allowDim = false;
+        g_pHyprOpenGL->renderTexture(data.texture, data.textBox, renderData);
+    }
+
+    return {};
+}
+
+bool COverviewTitlePassElement::needsLiveBlur() {
+    return false;
+}
+
+bool COverviewTitlePassElement::needsPrecomputeBlur() {
+    return false;
+}
+
+std::optional<CBox> COverviewTitlePassElement::boundingBox() {
+    const auto MONITOR = data.monitor.lock();
+    if (!MONITOR)
+        return std::nullopt;
+
+    return data.titleBox.copy().scale(1.F / MONITOR->m_scale).round();
+}
+
+CRegion COverviewTitlePassElement::opaqueRegion() {
+    return {};
+}

@@ -628,6 +628,9 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     if (!monitor || !window)
         return;
 
+    if (closing)
+        return;
+
     if (!getOverviewTitleEnabled())
         return;
 
@@ -664,11 +667,6 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     CHyprColor backgroundColor = getOverviewTitleBackgroundColor();
     backgroundColor.a = std::max(backgroundColor.a, 0.85);
     backgroundColor.a *= titleAlpha;
-    if (backgroundColor.a > 0.F) {
-        CRegion damage{CBox{{}, monitor->m_transformedSize}};
-        g_pHyprOpenGL->renderRect(titleBox, backgroundColor,
-                                  {.damage = &damage});
-    }
 
     int64_t    textColorRaw = 0;
     CHyprColor textColor    = getOverviewTitleTextColor(&textColorRaw);
@@ -682,12 +680,14 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     if (!texture)
         return;
 
-    CRegion                              damage{CBox{{}, monitor->m_transformedSize}};
-    CHyprOpenGLImpl::STextureRenderData data;
-    data.damage   = &damage;
-    data.a        = titleAlpha;
-    data.allowDim = false;
-    g_pHyprOpenGL->renderTexture(texture, textBox, data);
+    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewTitlePassElement>(COverviewTitlePassElement::SData{
+        .monitor         = monitor,
+        .titleBox        = titleBox,
+        .textBox         = textBox,
+        .backgroundColor = backgroundColor,
+        .texture         = texture,
+        .alpha           = titleAlpha,
+    }));
 }
 
 static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha) {
@@ -975,6 +975,7 @@ void renderOverviewWindow(const SRenderParams& params) {
 
     OverviewRender::flushPass(params.monitor);
     renderOverviewWindowTitle(params.monitor, params.window, params.windowBox, metrics, params.closing);
+    OverviewRender::flushPass(params.monitor);
 }
 
 } // namespace OverviewWindow
