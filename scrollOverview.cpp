@@ -198,6 +198,16 @@ static bool shouldShowPinnedFloatingOverviewWindow(const PHLWINDOW& window) {
     return true;
 }
 
+static bool isOverviewWallpaperLayer(const PHLLS& layer) {
+    if (!Desktop::View::validMapped(layer))
+        return false;
+
+    const auto& ns = layer->m_namespace;
+    static constexpr std::array<const char*, 5> WALLPAPER_NAMESPACES = {"wallpaper", "hyprpaper", "swww", "mpvpaper", "wpaperd"};
+
+    return std::ranges::any_of(WALLPAPER_NAMESPACES, [&ns](const char* token) { return ns.find(token) != std::string::npos; });
+}
+
 static bool surfaceTreeHasFrameCallbacks(SP<CWLSurfaceResource> surface) {
     if (!surface)
         return false;
@@ -1219,7 +1229,8 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
     syncSelectionToViewport();
 }
 
-static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const CBox& workspaceBox, float renderScale, const Time::steady_tp& now, float alpha = 1.F) {
+static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const CBox& workspaceBox, float renderScale, const Time::steady_tp& now, float alpha = 1.F,
+                                     bool wallpaperOnly = false) {
     if (!monitor)
         return;
 
@@ -1229,6 +1240,8 @@ static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const C
     for (auto const& ls : monitor->m_layerSurfaceLayers[layer]) {
         const auto LAYER = ls.lock();
         if (!Desktop::View::validMapped(LAYER))
+            continue;
+        if (wallpaperOnly && !isOverviewWallpaperLayer(LAYER))
             continue;
 
         if (!pushedRenderHints) {
@@ -1260,7 +1273,7 @@ void CScrollOverview::renderWallpaperLayers(PHLMONITOR monitor, const CBox& work
     if (!monitor)
         return;
 
-    renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, workspaceBox, renderScale, now, alpha);
+    renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, workspaceBox, renderScale, now, alpha, true);
 }
 
 void CScrollOverview::renderGlobalWallpaper(PHLMONITOR monitor, const Time::steady_tp& now) {
@@ -1270,10 +1283,11 @@ void CScrollOverview::renderGlobalWallpaper(PHLMONITOR monitor, const Time::stea
     g_pHyprRenderer->renderBackground(monitor);
 
     for (auto const& ls : monitor->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND]) {
-        if (!Desktop::View::validMapped(ls.lock()))
+        const auto LAYER = ls.lock();
+        if (!isOverviewWallpaperLayer(LAYER))
             continue;
 
-        g_pHyprRenderer->renderLayer(ls.lock(), monitor, now);
+        g_pHyprRenderer->renderLayer(LAYER, monitor, now);
     }
 }
 
