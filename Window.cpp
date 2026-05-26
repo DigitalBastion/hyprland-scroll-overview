@@ -625,6 +625,9 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
 }
 
 static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, bool closing) {
+    // Temporarily disabled while isolating a stale title artifact after overview closes.
+    return;
+
     if (!monitor || !window)
         return;
 
