@@ -21,7 +21,6 @@
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/managers/EventManager.hpp>
 #include <hyprland/src/plugins/PluginSystem.hpp>
-#include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/pass/Pass.hpp>
 #include <hyprland/src/render/pass/RectPassElement.hpp>
@@ -628,9 +627,6 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     if (!monitor || !window)
         return;
 
-    if (closing)
-        return;
-
     if (!getOverviewTitleEnabled())
         return;
 
@@ -667,6 +663,11 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     CHyprColor backgroundColor = getOverviewTitleBackgroundColor();
     backgroundColor.a = std::max(backgroundColor.a, 0.85);
     backgroundColor.a *= titleAlpha;
+    if (backgroundColor.a > 0.F) {
+        CRegion damage{CBox{{}, monitor->m_transformedSize}};
+        g_pHyprOpenGL->renderRect(titleBox, backgroundColor,
+                                  {.damage = &damage});
+    }
 
     int64_t    textColorRaw = 0;
     CHyprColor textColor    = getOverviewTitleTextColor(&textColorRaw);
@@ -680,16 +681,12 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     if (!texture)
         return;
 
-    CRegion damage{CBox{{}, monitor->m_transformedSize}};
-
-    if (backgroundColor.a > 0.F)
-        g_pHyprOpenGL->renderRect(titleBox, backgroundColor, {.damage = &damage});
-
-    CHyprOpenGLImpl::STextureRenderData renderData;
-    renderData.damage   = &damage;
-    renderData.a        = titleAlpha;
-    renderData.allowDim = false;
-    g_pHyprOpenGL->renderTexture(texture, textBox, renderData);
+    CRegion                              damage{CBox{{}, monitor->m_transformedSize}};
+    CHyprOpenGLImpl::STextureRenderData data;
+    data.damage   = &damage;
+    data.a        = titleAlpha;
+    data.allowDim = false;
+    g_pHyprOpenGL->renderTexture(texture, textBox, data);
 }
 
 static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha) {
@@ -830,7 +827,7 @@ static SOverviewCustomDecorationRenderState renderOverviewCustomDecorations(PHLM
         if (!deco || deco->getDecorationType() != DECORATION_CUSTOM || deco->getDecorationLayer() != layer)
             continue;
 
-        if (isOverviewHyprbarDecoration(deco.get())) {
+        if (layer == DECORATION_LAYER_UNDER && isOverviewHyprbarDecoration(deco.get())) {
             // Hyprbars registers plugin config values independently; avoid touching them from this plugin
             // until both plugins are on the same 0.55 config API.
             continue;
@@ -926,7 +923,6 @@ void renderOverviewWindow(const SRenderParams& params) {
 
     OverviewRender::flushPass(params.monitor);
     renderOverviewWindowTitle(params.monitor, params.window, params.windowBox, metrics, params.closing);
-    OverviewRender::flushPass(params.monitor);
 }
 
 } // namespace OverviewWindow

@@ -74,15 +74,8 @@ static uint32_t getOverviewFramebufferFormat(PHLMONITOR monitor) {
 
 static PHLWINDOW getOverviewFullscreenVisibilityWindow(const PHLWORKSPACE& workspace, const PHLWINDOW& fallback = {});
 
-static void removeOverviewPassElements() {
-    g_pHyprRenderer->m_renderPass.removeAllOfType("CScrollOverviewPassElement");
-    g_pHyprRenderer->m_renderPass.removeAllOfType("COverviewShadowPassElement");
-    g_pHyprRenderer->m_renderPass.removeAllOfType("COverviewTitlePassElement");
-}
-
 static void removeOverview(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
     const auto PMONITOR = g_pScrollOverview ? g_pScrollOverview->pMonitor.lock() : nullptr;
-    removeOverviewPassElements();
     g_pScrollOverview.reset();
     disableScrollOverviewHooks();
 
@@ -196,16 +189,6 @@ static bool shouldShowPinnedFloatingOverviewWindow(const PHLWINDOW& window) {
         return false;
 
     return true;
-}
-
-static bool isOverviewWallpaperLayer(const PHLLS& layer) {
-    if (!Desktop::View::validMapped(layer))
-        return false;
-
-    const auto& ns = layer->m_namespace;
-    static constexpr std::array<const char*, 5> WALLPAPER_NAMESPACES = {"wallpaper", "hyprpaper", "swww", "mpvpaper", "wpaperd"};
-
-    return std::ranges::any_of(WALLPAPER_NAMESPACES, [&ns](const char* token) { return ns.find(token) != std::string::npos; });
 }
 
 static bool surfaceTreeHasFrameCallbacks(SP<CWLSurfaceResource> surface) {
@@ -835,7 +818,6 @@ static void moveOverviewTargetNextToWindow(const SP<Layout::ITarget>& target, co
 
 CScrollOverview::~CScrollOverview() {
     g_pHyprOpenGL->makeEGLCurrent();
-    removeOverviewPassElements();
     stopRealtimePreviewTimer();
     if (scale)
         scale->resetAllCallbacks();
@@ -1229,8 +1211,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
     syncSelectionToViewport();
 }
 
-static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const CBox& workspaceBox, float renderScale, const Time::steady_tp& now, float alpha = 1.F,
-                                     bool wallpaperOnly = false) {
+static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const CBox& workspaceBox, float renderScale, const Time::steady_tp& now, float alpha = 1.F) {
     if (!monitor)
         return;
 
@@ -1240,8 +1221,6 @@ static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const C
     for (auto const& ls : monitor->m_layerSurfaceLayers[layer]) {
         const auto LAYER = ls.lock();
         if (!Desktop::View::validMapped(LAYER))
-            continue;
-        if (wallpaperOnly && !isOverviewWallpaperLayer(LAYER))
             continue;
 
         if (!pushedRenderHints) {
@@ -1273,7 +1252,7 @@ void CScrollOverview::renderWallpaperLayers(PHLMONITOR monitor, const CBox& work
     if (!monitor)
         return;
 
-    renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, workspaceBox, renderScale, now, alpha, true);
+    renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, workspaceBox, renderScale, now, alpha);
 }
 
 void CScrollOverview::renderGlobalWallpaper(PHLMONITOR monitor, const Time::steady_tp& now) {
@@ -1283,11 +1262,10 @@ void CScrollOverview::renderGlobalWallpaper(PHLMONITOR monitor, const Time::stea
     g_pHyprRenderer->renderBackground(monitor);
 
     for (auto const& ls : monitor->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND]) {
-        const auto LAYER = ls.lock();
-        if (!isOverviewWallpaperLayer(LAYER))
+        if (!Desktop::View::validMapped(ls.lock()))
             continue;
 
-        g_pHyprRenderer->renderLayer(LAYER, monitor, now);
+        g_pHyprRenderer->renderLayer(ls.lock(), monitor, now);
     }
 }
 
@@ -3286,6 +3264,8 @@ void CScrollOverview::onPreRender() {
     if (pMonitor)
         pMonitor->m_solitaryClient.reset();
 
+    forceLayersAboveFullscreen();
+
     if (closing)
         return;
 
@@ -3454,6 +3434,13 @@ void CScrollOverview::render() {
 
     renderDraggedWindow(MONITOR, ACTIVEIDX, PITCH, SCALE, NOW);
     renderPinnedFloatingWindows(MONITOR, SCALE, NOW);
+
+    for (auto const& ls : MONITOR->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_TOP]) {
+        if (!Desktop::View::validMapped(ls.lock()))
+            continue;
+
+        g_pHyprRenderer->renderLayer(ls.lock(), MONITOR, NOW);
+    }
 
     sendOverviewFrameCallbacks(NOW);
 }

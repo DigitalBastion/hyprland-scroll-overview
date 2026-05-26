@@ -2,10 +2,6 @@
 #include "globals.hpp"
 #include <hyprland/src/render/pass/PassElement.hpp>
 
-namespace Render {
-    class ITexture;
-}
-
 class CScrollOverviewPassElement : public IPassElement {
   public:
     CScrollOverviewPassElement();
@@ -53,38 +49,6 @@ class COverviewShadowPassElement : public IPassElement {
 
     virtual const char*         passName() {
         return "COverviewShadowPassElement";
-    }
-
-    virtual ePassElementType    type() {
-        return EK_CUSTOM;
-    }
-
-  private:
-    SData data;
-};
-
-class COverviewTitlePassElement : public IPassElement {
-  public:
-    struct SData {
-        PHLMONITORREF         monitor;
-        CBox                  titleBox;
-        CBox                  textBox;
-        CHyprColor            backgroundColor;
-        SP<Render::ITexture>  texture;
-        float                 alpha = 1.F;
-    };
-
-    COverviewTitlePassElement(const SData& data_);
-    virtual ~COverviewTitlePassElement() = default;
-
-    virtual std::vector<UP<IPassElement>> draw();
-    virtual bool                needsLiveBlur();
-    virtual bool                needsPrecomputeBlur();
-    virtual std::optional<CBox> boundingBox();
-    virtual CRegion             opaqueRegion();
-
-    virtual const char*         passName() {
-        return "COverviewTitlePassElement";
     }
 
     virtual ePassElementType    type() {
