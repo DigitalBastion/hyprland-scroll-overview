@@ -74,8 +74,15 @@ static uint32_t getOverviewFramebufferFormat(PHLMONITOR monitor) {
 
 static PHLWINDOW getOverviewFullscreenVisibilityWindow(const PHLWORKSPACE& workspace, const PHLWINDOW& fallback = {});
 
+static void removeOverviewPassElements() {
+    g_pHyprRenderer->m_renderPass.removeAllOfType("CScrollOverviewPassElement");
+    g_pHyprRenderer->m_renderPass.removeAllOfType("COverviewShadowPassElement");
+    g_pHyprRenderer->m_renderPass.removeAllOfType("COverviewTitlePassElement");
+}
+
 static void removeOverview(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
     const auto PMONITOR = g_pScrollOverview ? g_pScrollOverview->pMonitor.lock() : nullptr;
+    removeOverviewPassElements();
     g_pScrollOverview.reset();
     disableScrollOverviewHooks();
 
@@ -818,6 +825,7 @@ static void moveOverviewTargetNextToWindow(const SP<Layout::ITarget>& target, co
 
 CScrollOverview::~CScrollOverview() {
     g_pHyprOpenGL->makeEGLCurrent();
+    removeOverviewPassElements();
     stopRealtimePreviewTimer();
     if (scale)
         scale->resetAllCallbacks();
