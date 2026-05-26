@@ -680,14 +680,16 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     if (!texture)
         return;
 
-    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewTitlePassElement>(COverviewTitlePassElement::SData{
-        .monitor         = monitor,
-        .titleBox        = titleBox,
-        .textBox         = textBox,
-        .backgroundColor = backgroundColor,
-        .texture         = texture,
-        .alpha           = titleAlpha,
-    }));
+    CRegion damage{CBox{{}, monitor->m_transformedSize}};
+
+    if (backgroundColor.a > 0.F)
+        g_pHyprOpenGL->renderRect(titleBox, backgroundColor, {.damage = &damage});
+
+    CHyprOpenGLImpl::STextureRenderData renderData;
+    renderData.damage   = &damage;
+    renderData.a        = titleAlpha;
+    renderData.allowDim = false;
+    g_pHyprOpenGL->renderTexture(texture, textBox, renderData);
 }
 
 static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha) {
