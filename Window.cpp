@@ -331,15 +331,13 @@ static float getOverviewWindowTargetOpacity(const PHLWINDOW& window) {
 }
 
 
-static void roundStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONITOR monitor, float renderScale, size_t firstElement) {
+static void adjustStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONITOR monitor, float renderScale, size_t firstElement) {
     if (!window || !monitor)
         return;
 
     const int   rounding      = sc<int>(std::round(window->rounding() * monitor->m_scale * renderScale));
     const float roundingPower = window->roundingPower();
-
-    if (rounding <= 0)
-        return;
+    const CBox  monitorClip   = CBox{{}, monitor->m_transformedSize};
 
     auto& passElements = g_pHyprRenderer->m_renderPass.m_passElements;
     for (size_t i = firstElement; i < passElements.size(); ++i) {
@@ -351,9 +349,13 @@ static void roundStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONITO
         if (!surfacePassElement || surfacePassElement->m_data.pWindow != window || surfacePassElement->m_data.popup)
             continue;
 
-        surfacePassElement->m_data.dontRound     = false;
-        surfacePassElement->m_data.rounding      = rounding;
-        surfacePassElement->m_data.roundingPower = roundingPower;
+        surfacePassElement->m_data.clipBox = monitorClip;
+
+        if (rounding > 0) {
+            surfacePassElement->m_data.dontRound     = false;
+            surfacePassElement->m_data.rounding      = rounding;
+            surfacePassElement->m_data.roundingPower = roundingPower;
+        }
     }
 }
 
@@ -909,7 +911,7 @@ void renderOverviewWindow(const SRenderParams& params) {
     const auto firstWindowPassElement = g_pHyprRenderer->m_renderPass.m_passElements.size();
     g_pHyprRenderer->renderWindow(params.window, params.monitor, params.now, true, RENDER_PASS_ALL, true, true);
     if (!fullscreen)
-        roundStandaloneWindowPassElements(params.window, params.monitor, params.renderScale, firstWindowPassElement);
+        adjustStandaloneWindowPassElements(params.window, params.monitor, params.renderScale, firstWindowPassElement);
     g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = SRenderModifData{}}));
 
     renderOverviewCustomDecorations(params.monitor, params.window, params.workspaceBox ? *params.workspaceBox : CBox{}, params.windowBox, metrics, DECORATION_LAYER_OVER);
