@@ -21,6 +21,7 @@
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/managers/EventManager.hpp>
 #include <hyprland/src/plugins/PluginSystem.hpp>
+#include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/pass/Pass.hpp>
 #include <hyprland/src/render/pass/RectPassElement.hpp>
@@ -863,6 +864,53 @@ bool shouldUseBlurFramebuffer(const PHLWINDOW& window) {
     return shouldUsePrecomputedBlur(window) || (shouldShowOverviewWindow(window) && shouldBlurBackground(window) && window->m_ruleApplicator->xray().valueOr(false));
 }
 
+static bool shouldUseDirectSurfaceFallback(const PHLWINDOW& window) {
+    return window && window->m_class == "zen";
+}
+
+static void renderOverviewWindowSurfacesDirect(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, float renderScale, float alpha) {
+    if (!monitor || !window || !window->wlSurface() || !window->wlSurface()->resource())
+        return;
+
+    CRegion damage{CBox{{}, monitor->m_transformedSize}};
+
+    const auto savedRenderModif = g_pHyprRenderer->m_renderData.renderModif;
+    SRenderModifData modif;
+    modif.modifs.emplace_back(SRenderModifData::RMOD_TYPE_SCALE, renderScale);
+    modif.modifs.emplace_back(SRenderModifData::RMOD_TYPE_TRANSLATE, windowBox.pos());
+    g_pHyprRenderer->m_renderData.renderModif = modif;
+    auto restoreRenderModif = Hyprutils::Utils::CScopeGuard([savedRenderModif] { g_pHyprRenderer->m_renderData.renderModif = savedRenderModif; });
+
+    window->wlSurface()->resource()->breadthfirst(
+        [&](SP<CWLSurfaceResource> surface, const Vector2D& offset, void*) {
+            if (!surface || !surface->m_current.texture || surface->m_current.size.x < 1 || surface->m_current.size.y < 1)
+                return;
+
+            const bool mainSurface = surface == window->wlSurface()->resource();
+            CBox       box         = mainSurface ? CBox{{}, window->m_realSize->value()} : CBox{offset, surface->m_current.size};
+
+            if (!mainSurface) {
+                if (box.x + box.width > window->m_realSize->value().x)
+                    box.width = window->m_realSize->value().x - box.x;
+                if (box.y + box.height > window->m_realSize->value().y)
+                    box.height = window->m_realSize->value().y - box.y;
+            }
+
+            box.round();
+            if (box.empty())
+                return;
+
+            CHyprOpenGLImpl::STextureRenderData data;
+            data.damage   = &damage;
+            data.surface  = surface;
+            data.a        = alpha;
+            data.allowDim = false;
+
+            g_pHyprOpenGL->renderTexture(surface->m_current.texture, box, data);
+        },
+        nullptr);
+}
+
 void renderOverviewWindow(const SRenderParams& params) {
     if (!params.window)
         return;
@@ -905,12 +953,16 @@ void renderOverviewWindow(const SRenderParams& params) {
     overrideWindowSurfaceOpacity(params.window, surfaceOpacityOverrides, metrics.targetOpacity);
     auto restoreSurfaceOpacities = Hyprutils::Utils::CScopeGuard([&surfaceOpacityOverrides] { restoreSurfaceOpacityOverrides(surfaceOpacityOverrides); });
 
-    g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = modif}));
-    const auto firstWindowPassElement = g_pHyprRenderer->m_renderPass.m_passElements.size();
-    g_pHyprRenderer->renderWindow(params.window, params.monitor, params.now, true, RENDER_PASS_ALL, true, true);
-    if (!fullscreen)
-        roundStandaloneWindowPassElements(params.window, params.monitor, params.renderScale, firstWindowPassElement);
-    g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = SRenderModifData{}}));
+    if (shouldUseDirectSurfaceFallback(params.window)) {
+        renderOverviewWindowSurfacesDirect(params.monitor, params.window, params.windowBox, params.renderScale, metrics.targetOpacity);
+    } else {
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = modif}));
+        const auto firstWindowPassElement = g_pHyprRenderer->m_renderPass.m_passElements.size();
+        g_pHyprRenderer->renderWindow(params.window, params.monitor, params.now, true, RENDER_PASS_ALL, true, true);
+        if (!fullscreen)
+            roundStandaloneWindowPassElements(params.window, params.monitor, params.renderScale, firstWindowPassElement);
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = SRenderModifData{}}));
+    }
 
     renderOverviewCustomDecorations(params.monitor, params.window, params.workspaceBox ? *params.workspaceBox : CBox{}, params.windowBox, metrics, DECORATION_LAYER_OVER);
     renderOverviewCustomDecorations(params.monitor, params.window, params.workspaceBox ? *params.workspaceBox : CBox{}, params.windowBox, metrics, DECORATION_LAYER_OVERLAY);
