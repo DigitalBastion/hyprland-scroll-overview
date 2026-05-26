@@ -818,6 +818,7 @@ static void renderOverviewGroupTabs(PHLMONITOR monitor, const PHLWINDOW& window,
 static SOverviewCustomDecorationRenderState renderOverviewCustomDecorations(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& workspaceBox, const CBox& windowBox,
                                                                            const SOverviewWindowMetrics& metrics, eDecorationLayer layer) {
     SOverviewCustomDecorationRenderState state;
+    return state;
 
     if (!monitor || !window)
         return state;
@@ -974,8 +975,6 @@ void renderOverviewWindow(const SRenderParams& params) {
 
     if (!fullscreen) {
         renderOverviewWindowBorder(params.monitor, params.window, params.windowBox, metrics, params.selected);
-        if (params.workspaceBox)
-            renderOverviewGroupTabs(params.monitor, params.window, params.windowBox, *params.workspaceBox, metrics);
     }
 
     OverviewRender::flushPass(params.monitor);
