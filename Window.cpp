@@ -167,10 +167,9 @@ static CHyprColor getOverviewTitleBackgroundColor() {
 }
 
 static CHyprColor getOverviewInactiveBorderTitleColor(const PHLWINDOW& window) {
-    static auto PINACTIVECOL = CConfigValue<Hyprlang::CUSTOMTYPE>("general:col.inactive_border");
-    auto* const INACTIVECOL  = sc<Config::CGradientValueData*>((PINACTIVECOL.ptr())->getData());
+    const Config::CGradientValueData fallback{getOverviewTitleBackgroundColor()};
 
-    const auto& grad = window->m_ruleApplicator->inactiveBorderColor().valueOr(*INACTIVECOL);
+    const auto grad = window->m_ruleApplicator->inactiveBorderColor().valueOr(fallback);
     if (grad.m_colors.empty())
         return getOverviewTitleBackgroundColor();
 
@@ -612,12 +611,9 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
     if (metrics.borderSize <= 0.F)
         return;
 
-    static auto PACTIVECOL   = CConfigValue<Hyprlang::CUSTOMTYPE>("general:col.active_border");
-    static auto PINACTIVECOL = CConfigValue<Hyprlang::CUSTOMTYPE>("general:col.inactive_border");
-    auto* const ACTIVECOL    = reinterpret_cast<Config::CGradientValueData*>((PACTIVECOL.ptr())->getData());
-    auto* const INACTIVECOL  = reinterpret_cast<Config::CGradientValueData*>((PINACTIVECOL.ptr())->getData());
-
-    const auto& grad             = selected ? window->m_ruleApplicator->activeBorderColor().valueOr(*ACTIVECOL) : window->m_ruleApplicator->inactiveBorderColor().valueOr(*INACTIVECOL);
+    const Config::CGradientValueData activeFallback{CHyprColor{0x33ccffee}};
+    const Config::CGradientValueData inactiveFallback{CHyprColor{0x595959aa}};
+    const auto grad = selected ? window->m_ruleApplicator->activeBorderColor().valueOr(activeFallback) : window->m_ruleApplicator->inactiveBorderColor().valueOr(inactiveFallback);
 
     const CBox borderBox = getOverviewBorderBox(windowBox, metrics);
 
@@ -712,18 +708,18 @@ static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW
     static auto PROUNDINGPOWER          = CConfigValue<Config::FLOAT>("group:groupbar:rounding_power");
     static auto POUTERGAP               = CConfigValue<Config::INTEGER>("group:groupbar:gaps_out");
     static auto PINNERGAP               = CConfigValue<Config::INTEGER>("group:groupbar:gaps_in");
-    static auto PGROUPCOLACTIVE         = CConfigValue<Hyprlang::CUSTOMTYPE>("group:groupbar:col.active");
-    static auto PGROUPCOLINACTIVE       = CConfigValue<Hyprlang::CUSTOMTYPE>("group:groupbar:col.inactive");
-    static auto PGROUPCOLACTIVELOCKED   = CConfigValue<Hyprlang::CUSTOMTYPE>("group:groupbar:col.locked_active");
-    static auto PGROUPCOLINACTIVELOCKED = CConfigValue<Hyprlang::CUSTOMTYPE>("group:groupbar:col.locked_inactive");
+    static auto PGROUPCOLACTIVE         = CConfigValue<Config::IComplexConfigValue>("group:groupbar:col.active");
+    static auto PGROUPCOLINACTIVE       = CConfigValue<Config::IComplexConfigValue>("group:groupbar:col.inactive");
+    static auto PGROUPCOLACTIVELOCKED   = CConfigValue<Config::IComplexConfigValue>("group:groupbar:col.locked_active");
+    static auto PGROUPCOLINACTIVELOCKED = CConfigValue<Config::IComplexConfigValue>("group:groupbar:col.locked_inactive");
 
     if (*PINDICATORHEIGHT <= 0)
         return;
 
-    auto* const GROUPCOLACTIVE         = sc<Config::CGradientValueData*>((PGROUPCOLACTIVE.ptr())->getData());
-    auto* const GROUPCOLINACTIVE       = sc<Config::CGradientValueData*>((PGROUPCOLINACTIVE.ptr())->getData());
-    auto* const GROUPCOLACTIVELOCKED   = sc<Config::CGradientValueData*>((PGROUPCOLACTIVELOCKED.ptr())->getData());
-    auto* const GROUPCOLINACTIVELOCKED = sc<Config::CGradientValueData*>((PGROUPCOLINACTIVELOCKED.ptr())->getData());
+    auto* const GROUPCOLACTIVE         = sc<Config::CGradientValueData*>(PGROUPCOLACTIVE.ptr());
+    auto* const GROUPCOLINACTIVE       = sc<Config::CGradientValueData*>(PGROUPCOLINACTIVE.ptr());
+    auto* const GROUPCOLACTIVELOCKED   = sc<Config::CGradientValueData*>(PGROUPCOLACTIVELOCKED.ptr());
+    auto* const GROUPCOLINACTIVELOCKED = sc<Config::CGradientValueData*>(PGROUPCOLINACTIVELOCKED.ptr());
 
     const bool  groupLocked  = window->m_group->locked() || g_pKeybindManager->m_groupsLocked;
     const auto* colActive    = groupLocked ? GROUPCOLACTIVELOCKED : GROUPCOLACTIVE;

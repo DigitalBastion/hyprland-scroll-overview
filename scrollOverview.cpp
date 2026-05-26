@@ -239,8 +239,8 @@ static bool layerHasOverviewAnimation(const PHLLS& layer) {
 }
 
 static Config::CCssGapData getOverviewWindowHitboxGap() {
-    static auto PGAPSIN = CConfigValue<Hyprlang::CUSTOMTYPE>("general:gaps_in");
-    return *sc<Config::CCssGapData*>((PGAPSIN.ptr())->getData());
+    static auto PGAPSIN = CConfigValue<Config::IComplexConfigValue>("general:gaps_in");
+    return *sc<Config::CCssGapData*>(PGAPSIN.ptr());
 }
 
 static CBox getOverviewWindowBox(const PHLWINDOW& window, PHLMONITOR monitor, float scale, const Vector2D& viewOffset, float yoff) {
