@@ -7,6 +7,8 @@
 #include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
+#include <hyprland/src/config/values/types/FloatValue.hpp>
+#include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
@@ -52,6 +54,14 @@ APICALL EXPORT std::string PLUGIN_API_VERSION() {
 static bool renderingOverview = false;
 static bool damageFromSurface = false;
 static bool g_scrollOverviewHooksActive = false;
+
+static bool addOverviewIntConfig(const char* name, Config::INTEGER value) {
+    return HyprlandAPI::addConfigValueV2(SCROLLOVERVIEW_HANDLE, makeShared<Config::Values::CIntValue>(name, "", value));
+}
+
+static bool addOverviewFloatConfig(const char* name, Config::FLOAT value) {
+    return HyprlandAPI::addConfigValueV2(SCROLLOVERVIEW_HANDLE, makeShared<Config::Values::CFloatValue>(name, "", value));
+}
 
 static void failNotif(const std::string& reason);
 
@@ -402,20 +412,20 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addConfigKeyword(SCROLLOVERVIEW_HANDLE, "scrolloverview-gesture", ::overviewGestureKeyword, {});
 
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:gesture_distance", Hyprlang::INT{200});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:scale", Hyprlang::FLOAT{0.5F});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:workspace_gap", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:wallpaper", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:blur", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:enabled", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:range", Hyprlang::INT{-1});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:render_power", Hyprlang::INT{-1});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:ignore_window", Hyprlang::INT{-1});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:color", Hyprlang::INT{-1});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:enabled", Hyprlang::INT{1});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:font_size", Hyprlang::INT{32});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:text_color", Hyprlang::INT{0xFFFFFFFF});
-    HyprlandAPI::addConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:background_color", Hyprlang::INT{0x99000000});
+    addOverviewIntConfig("plugin:scrolloverview:gesture_distance", 200);
+    addOverviewFloatConfig("plugin:scrolloverview:scale", 0.5F);
+    addOverviewIntConfig("plugin:scrolloverview:workspace_gap", 0);
+    addOverviewIntConfig("plugin:scrolloverview:wallpaper", 0);
+    addOverviewIntConfig("plugin:scrolloverview:blur", 0);
+    addOverviewIntConfig("plugin:scrolloverview:shadow:enabled", 0);
+    addOverviewIntConfig("plugin:scrolloverview:shadow:range", -1);
+    addOverviewIntConfig("plugin:scrolloverview:shadow:render_power", -1);
+    addOverviewIntConfig("plugin:scrolloverview:shadow:ignore_window", -1);
+    addOverviewIntConfig("plugin:scrolloverview:shadow:color", -1);
+    addOverviewIntConfig("plugin:scrolloverview:title:enabled", 1);
+    addOverviewIntConfig("plugin:scrolloverview:title:font_size", 32);
+    addOverviewIntConfig("plugin:scrolloverview:title:text_color", 0xFFFFFFFF);
+    addOverviewIntConfig("plugin:scrolloverview:title:background_color", 0x99000000);
 
     HyprlandAPI::reloadConfig();
 

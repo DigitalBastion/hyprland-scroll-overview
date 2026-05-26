@@ -243,6 +243,22 @@ static Config::CCssGapData getOverviewWindowHitboxGap() {
     return *sc<Config::CCssGapData*>(PGAPSIN.ptr());
 }
 
+static Config::INTEGER readOverviewConfigInteger(const std::string& name, Config::INTEGER fallback = 0) {
+    const CConfigValue<Config::INTEGER> value{name};
+    return value.good() ? *value : fallback;
+}
+
+static void writeOverviewConfigInteger(const std::string& name, Config::INTEGER value) {
+    const auto reply = Config::mgr()->getConfigValue(name);
+    if (!reply.dataptr || !*reply.dataptr || !reply.type)
+        return;
+
+    if (*reply.type == typeid(bool))
+        **(bool* const*)reply.dataptr = value != 0;
+    else if (*reply.type == typeid(Config::INTEGER))
+        **(Config::INTEGER* const*)reply.dataptr = value;
+}
+
 static CBox getOverviewWindowBox(const PHLWINDOW& window, PHLMONITOR monitor, float scale, const Vector2D& viewOffset, float yoff) {
     const auto MONITORSCALE    = monitor->m_scale;
     const auto VIEWPORT_CENTER = CBox{{}, monitor->m_size * MONITORSCALE}.middle();
@@ -436,8 +452,8 @@ static bool overviewBoxIntersectsMonitor(const CBox& box, PHLMONITOR monitor) {
 }
 
 static int getWorkspaceGap() {
-    static auto* const* PGAP = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:workspace_gap")->getDataStaticPtr();
-    return std::max<int>(0, **PGAP);
+    static auto PGAP = CConfigValue<Config::INTEGER>("plugin:scrolloverview:workspace_gap");
+    return std::max<int>(0, *PGAP);
 }
 
 static double overviewBoxIntersectionArea(const CBox& a, const CBox& b) {
@@ -519,28 +535,26 @@ static CBox getPinnedFloatingOverviewWindowBox(PHLMONITOR monitor, const PHLWIND
 }
 
 static int getWallpaperMode() {
-    static auto* const* PMODE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:wallpaper")->getDataStaticPtr();
-    return std::clamp<int>(**PMODE, 0, 2);
+    static auto PMODE = CConfigValue<Config::INTEGER>("plugin:scrolloverview:wallpaper");
+    return std::clamp<int>(*PMODE, 0, 2);
 }
 
 static bool getOverviewBlur() {
-    static auto* const* PBLUR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:blur")->getDataStaticPtr();
-    return **PBLUR;
+    static auto PBLUR = CConfigValue<Config::INTEGER>("plugin:scrolloverview:blur");
+    return *PBLUR;
 }
 
 static std::chrono::milliseconds getOverviewIdleFrameInterval() {
-    static auto* const* PFPS = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "misc:render_unfocused_fps")->getDataStaticPtr();
-
-    const int fps = std::clamp<int>(**PFPS, 1, 240);
+    const int fps = std::clamp<int>(readOverviewConfigInteger("misc:render_unfocused_fps", 15), 1, 240);
     return std::chrono::milliseconds(std::max(1, 1000 / fps));
 }
 
 static constexpr std::chrono::milliseconds OVERVIEW_WINDOW_FRAME_INTERVAL = std::chrono::milliseconds(33);
 
 static float getOverviewConfiguredScale() {
-    static auto* const* PSCALE = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:scale")->getDataStaticPtr();
+    static auto PSCALE = CConfigValue<Config::FLOAT>("plugin:scrolloverview:scale");
 
-    const float configuredScale = **PSCALE;
+    const float configuredScale = *PSCALE;
 
     return std::clamp(configuredScale, 0.1F, 0.9F);
 }
@@ -554,16 +568,16 @@ struct SOverviewShadowConfig {
 };
 
 static SOverviewShadowConfig getOverviewShadowConfig() {
-    static auto* const* PENABLED     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:enabled")->getDataStaticPtr();
-    static auto* const* PRANGE       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:range")->getDataStaticPtr();
-    static auto* const* PRENDERPOWER = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:render_power")->getDataStaticPtr();
-    static auto* const* PIGNORE      = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:ignore_window")->getDataStaticPtr();
-    static auto* const* PCOLOR       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:shadow:color")->getDataStaticPtr();
+    static auto PENABLED     = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:enabled");
+    static auto PRANGE       = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:range");
+    static auto PRENDERPOWER = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:render_power");
+    static auto PIGNORE      = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:ignore_window");
+    static auto PCOLOR       = CConfigValue<Config::INTEGER>("plugin:scrolloverview:shadow:color");
 
-    const auto pluginRange       = **PRANGE;
-    const auto pluginRenderPower = **PRENDERPOWER;
-    const auto pluginIgnore      = **PIGNORE;
-    const auto pluginColor       = **PCOLOR;
+    const auto pluginRange       = *PRANGE;
+    const auto pluginRenderPower = *PRENDERPOWER;
+    const auto pluginIgnore      = *PIGNORE;
+    const auto pluginColor       = *PCOLOR;
 
     const int  range       = pluginRange >= 0 ? pluginRange : 0;
     const int  renderPower = pluginRenderPower >= 0 ? pluginRenderPower : 1;
@@ -571,7 +585,7 @@ static SOverviewShadowConfig getOverviewShadowConfig() {
     const auto color       = pluginColor >= 0 ? pluginColor : 0x66000000;
 
     return {
-        .enabled      = !!**PENABLED,
+        .enabled      = !!*PENABLED,
         .range        = std::max(0, range),
         .renderPower  = std::clamp(renderPower, 1, 4),
         .ignoreWindow = !!ignore,
@@ -630,13 +644,10 @@ static void moveOverviewTargetToHorizontalEdge(const SP<Layout::ITarget>& target
     if (moveOverviewScrollingTargetToHorizontalEdge(target, side))
         return;
 
-    static auto* const* PFALLBACK = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "binds:window_direction_monitor_fallback")->getDataStaticPtr();
-
-    const int PREVFALLBACK = **PFALLBACK;
-    **PFALLBACK            = 0;
+    const int PREVFALLBACK = readOverviewConfigInteger("binds:window_direction_monitor_fallback");
+    writeOverviewConfigInteger("binds:window_direction_monitor_fallback", 0);
     auto restoreFallback   = Hyprutils::Utils::CScopeGuard([PREVFALLBACK] {
-        static auto* const* PFALLBACK = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "binds:window_direction_monitor_fallback")->getDataStaticPtr();
-        **PFALLBACK                  = PREVFALLBACK;
+        writeOverviewConfigInteger("binds:window_direction_monitor_fallback", PREVFALLBACK);
     });
 
     const std::string DIRECTION = side < 0 ? "l" : "r";
@@ -764,13 +775,10 @@ static void moveOverviewTargetNextToWindow(const SP<Layout::ITarget>& target, co
     if (moveOverviewScrollingTargetNextToWindow(target, anchor, direction))
         return;
 
-    static auto* const* PFALLBACK = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "binds:window_direction_monitor_fallback")->getDataStaticPtr();
-
-    const int PREVFALLBACK = **PFALLBACK;
-    **PFALLBACK            = 0;
+    const int PREVFALLBACK = readOverviewConfigInteger("binds:window_direction_monitor_fallback");
+    writeOverviewConfigInteger("binds:window_direction_monitor_fallback", 0);
     auto restoreFallback   = Hyprutils::Utils::CScopeGuard([PREVFALLBACK] {
-        static auto* const* PFALLBACK = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "binds:window_direction_monitor_fallback")->getDataStaticPtr();
-        **PFALLBACK                  = PREVFALLBACK;
+        writeOverviewConfigInteger("binds:window_direction_monitor_fallback", PREVFALLBACK);
     });
 
     const bool WANT_NEGATIVE = direction == "l" || direction == "u";
@@ -2358,56 +2366,29 @@ void CScrollOverview::applyInputConfigOverrides() {
     if (inputConfigOverridden)
         return;
 
-    const auto readConfigInt = [](const std::string& name) -> Config::INTEGER {
-        const CConfigValue<Config::INTEGER> value{name};
-        return value.good() ? *value : 0;
-    };
-
-    const auto writeConfigInt = [](const std::string& name, Config::INTEGER value) {
-        const auto reply = Config::mgr()->getConfigValue(name);
-        if (!reply.dataptr || !*reply.dataptr || !reply.type)
-            return;
-
-        if (*reply.type == typeid(bool))
-            **(bool* const*)reply.dataptr = value != 0;
-        else if (*reply.type == typeid(Config::INTEGER))
-            **(Config::INTEGER* const*)reply.dataptr = value;
-    };
-
-    previousNoWarps                    = readConfigInt("cursor:no_warps");
-    previousWarpOnChangeWorkspace      = readConfigInt("cursor:warp_on_change_workspace");
-    previousWarpOnToggleSpecial        = readConfigInt("cursor:warp_on_toggle_special");
-    previousWarpBackAfterNonMouseInput = readConfigInt("cursor:warp_back_after_non_mouse_input");
-    previousFollowMouse                = readConfigInt("input:follow_mouse");
+    previousNoWarps                    = readOverviewConfigInteger("cursor:no_warps");
+    previousWarpOnChangeWorkspace      = readOverviewConfigInteger("cursor:warp_on_change_workspace");
+    previousWarpOnToggleSpecial        = readOverviewConfigInteger("cursor:warp_on_toggle_special");
+    previousWarpBackAfterNonMouseInput = readOverviewConfigInteger("cursor:warp_back_after_non_mouse_input");
+    previousFollowMouse                = readOverviewConfigInteger("input:follow_mouse");
     inputConfigOverridden = true;
 
-    writeConfigInt("cursor:no_warps", 1);
-    writeConfigInt("cursor:warp_on_change_workspace", 0);
-    writeConfigInt("cursor:warp_on_toggle_special", 0);
-    writeConfigInt("cursor:warp_back_after_non_mouse_input", 0);
-    writeConfigInt("input:follow_mouse", 0);
+    writeOverviewConfigInteger("cursor:no_warps", 1);
+    writeOverviewConfigInteger("cursor:warp_on_change_workspace", 0);
+    writeOverviewConfigInteger("cursor:warp_on_toggle_special", 0);
+    writeOverviewConfigInteger("cursor:warp_back_after_non_mouse_input", 0);
+    writeOverviewConfigInteger("input:follow_mouse", 0);
 }
 
 void CScrollOverview::restoreInputConfigOverrides() {
     if (!inputConfigOverridden)
         return;
 
-    const auto writeConfigInt = [](const std::string& name, Config::INTEGER value) {
-        const auto reply = Config::mgr()->getConfigValue(name);
-        if (!reply.dataptr || !*reply.dataptr || !reply.type)
-            return;
-
-        if (*reply.type == typeid(bool))
-            **(bool* const*)reply.dataptr = value != 0;
-        else if (*reply.type == typeid(Config::INTEGER))
-            **(Config::INTEGER* const*)reply.dataptr = value;
-    };
-
-    writeConfigInt("cursor:no_warps", previousNoWarps);
-    writeConfigInt("cursor:warp_on_change_workspace", previousWarpOnChangeWorkspace);
-    writeConfigInt("cursor:warp_on_toggle_special", previousWarpOnToggleSpecial);
-    writeConfigInt("cursor:warp_back_after_non_mouse_input", previousWarpBackAfterNonMouseInput);
-    writeConfigInt("input:follow_mouse", previousFollowMouse);
+    writeOverviewConfigInteger("cursor:no_warps", previousNoWarps);
+    writeOverviewConfigInteger("cursor:warp_on_change_workspace", previousWarpOnChangeWorkspace);
+    writeOverviewConfigInteger("cursor:warp_on_toggle_special", previousWarpOnToggleSpecial);
+    writeOverviewConfigInteger("cursor:warp_back_after_non_mouse_input", previousWarpBackAfterNonMouseInput);
+    writeOverviewConfigInteger("input:follow_mouse", previousFollowMouse);
 
     inputConfigOverridden = false;
 }
@@ -3491,11 +3472,11 @@ void CScrollOverview::resetSwipe() {
 }
 
 void CScrollOverview::onSwipeUpdate(double delta) {
-    static auto* const* PDISTANCE    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:gesture_distance")->getDataStaticPtr();
+    static auto PDISTANCE = CConfigValue<Config::INTEGER>("plugin:scrolloverview:gesture_distance");
 
     m_isSwiping = true;
 
-    const float PERC = closing ? std::clamp(delta / (double)**PDISTANCE, 0.0, 1.0) : 1.0 - std::clamp(delta / (double)**PDISTANCE, 0.0, 1.0);
+    const float PERC = closing ? std::clamp(delta / (double)*PDISTANCE, 0.0, 1.0) : 1.0 - std::clamp(delta / (double)*PDISTANCE, 0.0, 1.0);
 
     scale->setValueAndWarp(hyprlerp(1.F, getOverviewConfiguredScale(), PERC));
 }

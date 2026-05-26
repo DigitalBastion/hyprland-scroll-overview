@@ -130,18 +130,18 @@ static bool shouldShowOverviewWindow(const PHLWINDOW& window) {
 }
 
 static bool getOverviewTitleEnabled() {
-    static auto* const* PENABLED = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:enabled")->getDataStaticPtr();
-    return **PENABLED;
+    static auto PENABLED = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:enabled");
+    return *PENABLED;
 }
 
 static int getOverviewTitleFontSize() {
-    static auto* const* PFONTSIZE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:font_size")->getDataStaticPtr();
-    return std::max<int>(1, **PFONTSIZE);
+    static auto PFONTSIZE = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:font_size");
+    return std::max<int>(1, *PFONTSIZE);
 }
 
 static float getOverviewConfiguredScale() {
-    static auto* const* PSCALE = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:scale")->getDataStaticPtr();
-    return std::clamp(**PSCALE, 0.1F, 0.9F);
+    static auto PSCALE = CConfigValue<Config::FLOAT>("plugin:scrolloverview:scale");
+    return std::clamp(*PSCALE, 0.1F, 0.9F);
 }
 
 static float getOverviewTitleAlpha(float renderScale, bool closing, float targetOpacity) {
@@ -155,17 +155,17 @@ static float getOverviewTitleAlpha(float renderScale, bool closing, float target
 }
 
 static CHyprColor getOverviewTitleTextColor(int64_t* rawValue = nullptr) {
-    static auto* const* PTEXTCOLOR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:text_color")->getDataStaticPtr();
+    static auto PTEXTCOLOR = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:text_color");
     if (rawValue)
-        *rawValue = **PTEXTCOLOR;
+        *rawValue = *PTEXTCOLOR;
 
-    return CHyprColor(sc<uint64_t>(**PTEXTCOLOR));
+    return CHyprColor(sc<uint64_t>(*PTEXTCOLOR));
 }
 
 static CHyprColor getOverviewTitleBackgroundColor() {
-    static auto* const* PBACKGROUNDCOLOR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(SCROLLOVERVIEW_HANDLE, "plugin:scrolloverview:title:background_color")->getDataStaticPtr();
+    static auto PBACKGROUNDCOLOR = CConfigValue<Config::INTEGER>("plugin:scrolloverview:title:background_color");
 
-    const auto rawColor = sc<uint64_t>(**PBACKGROUNDCOLOR);
+    const auto rawColor = sc<uint64_t>(*PBACKGROUNDCOLOR);
     if ((rawColor & 0xFF000000) == 0 && (rawColor & 0x000000FF) != 0)
         return CHyprColor(((rawColor & 0x000000FF) << 24) | ((rawColor & 0xFFFFFF00) >> 8));
 
@@ -496,10 +496,10 @@ static void renderOverviewHyprbarDecoration(SOverviewCustomDecorationRenderState
     if (!monitor || !window || !decoration)
         return;
 
-    static auto PHYPRBARHEIGHT        = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_height");
-    static auto PHYPRBARTEXTSIZE      = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_text_size");
-    static auto PHYPRBARPADDING       = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_padding");
-    static auto PHYPRBARBUTTONPADDING = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_button_padding");
+    static auto PHYPRBARHEIGHT        = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_height");
+    static auto PHYPRBARTEXTSIZE      = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_text_size");
+    static auto PHYPRBARPADDING       = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_padding");
+    static auto PHYPRBARBUTTONPADDING = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_button_padding");
     auto* const HYPRBARGLOBALSTATE    = getOverviewHyprbarGlobalState();
 
     const int previousBarHeight        = *PHYPRBARHEIGHT.ptr();
@@ -574,10 +574,10 @@ static void renderOverviewHyprbarDecoration(SOverviewCustomDecorationRenderState
             previousReplyData->lastReply = previousReply;
         decoration->onPositioningReply(previousReply);
 
-        static auto PHYPRBARHEIGHT        = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_height");
-        static auto PHYPRBARTEXTSIZE      = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_text_size");
-        static auto PHYPRBARPADDING       = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_padding");
-        static auto PHYPRBARBUTTONPADDING = CConfigValue<Hyprlang::INT>("plugin:hyprbars:bar_button_padding");
+        static auto PHYPRBARHEIGHT        = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_height");
+        static auto PHYPRBARTEXTSIZE      = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_text_size");
+        static auto PHYPRBARPADDING       = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_padding");
+        static auto PHYPRBARBUTTONPADDING = CConfigValue<Config::INTEGER>("plugin:hyprbars:bar_button_padding");
         *PHYPRBARHEIGHT.ptr()             = previousBarHeight;
         *PHYPRBARTEXTSIZE.ptr()           = previousBarTextSize;
         *PHYPRBARPADDING.ptr()            = previousBarPadding;
