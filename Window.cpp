@@ -830,7 +830,7 @@ static SOverviewCustomDecorationRenderState renderOverviewCustomDecorations(PHLM
         if (!deco || deco->getDecorationType() != DECORATION_CUSTOM || deco->getDecorationLayer() != layer)
             continue;
 
-        if (layer == DECORATION_LAYER_UNDER && isOverviewHyprbarDecoration(deco.get())) {
+        if (isOverviewHyprbarDecoration(deco.get())) {
             // Hyprbars registers plugin config values independently; avoid touching them from this plugin
             // until both plugins are on the same 0.55 config API.
             continue;
