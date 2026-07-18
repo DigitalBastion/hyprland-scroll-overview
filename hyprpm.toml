@@ -5,6 +5,7 @@ commit_pins = [
     # Hyprland                                  hyprland-scroll-overview
     ["521ece463c4a9d3d128670688a34756805a4328f", "bb17a6caa04beb7cb8c544b837c2c455ff88c50c"], # v0.54.3
     ["39d7e209c79d451efab1b21151d5938289da838d", "5ffabc7cda5cf5cb1675f7eb8de76a15dd34093d"], # v0.55.2
+    ["a0136d8c04687bb36eb8a28eb9d1ff92aea99704", "bcdcfb8ffaaa3a32f36cc7b28d763dd5128793ce"], # v0.55.4
 ]
 
 [scrolloverview]
