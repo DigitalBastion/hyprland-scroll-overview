@@ -516,6 +516,20 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(data));
 }
 
+static void renderOverviewWindowInactiveOverlay(const CBox& windowBox, const SOverviewWindowMetrics& metrics, bool selected) {
+    if (selected)
+        return;
+
+    CHyprColor color = CHyprColor{0x40000000};
+    color.a *= metrics.targetOpacity;
+    g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{
+        .box           = windowBox,
+        .color         = color,
+        .round         = metrics.roundingPx,
+        .roundingPower = metrics.roundingPower,
+    }));
+}
+
 static void renderOverviewWindowTitle(const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics) {
     if (!window || !ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled"))
         return;
@@ -921,8 +935,7 @@ void renderOverviewWindow(const SRenderParams& params) {
     if (!fullscreen)
         renderOverviewGroupTabTitles(params.monitor, params.window, params.windowBox, metrics, metrics.targetOpacity);
 
-    if (!fullscreen)
-        renderOverviewWindowBorder(params.monitor, params.window, params.windowBox, metrics, params.selected);
+    renderOverviewWindowInactiveOverlay(params.windowBox, metrics, params.selected);
 
     renderOverviewWindowTitle(params.window, params.windowBox, metrics);
 
