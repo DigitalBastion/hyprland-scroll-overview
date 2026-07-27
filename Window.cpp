@@ -899,6 +899,9 @@ void renderOverviewWindow(const SRenderParams& params) {
     const Vector2D previousWindowSize      = params.window->m_realSize->value();
     const bool     previousAnimatingIn     = params.window->m_animatingIn;
     const bool     previousSizeAnimating   = params.window->sizeAnimation()->isBeingAnimated();
+    const auto     previousBorderSize      = params.window->m_ruleApplicator->borderSize();
+    const bool     previousBorderCacheDirty = params.window->m_borderSizeCacheDirty;
+    const int      previousCachedBorderSize = params.window->m_cachedBorderSize;
     const auto     WORKSPACE               = params.window->m_workspace;
     const bool     OVERRIDEWORKSPACEOFFSET = WORKSPACE && !params.window->m_pinned;
     const Vector2D previousWorkspaceOffset = OVERRIDEWORKSPACEOFFSET ? WORKSPACE->m_renderOffset->value() : Vector2D{};
@@ -906,6 +909,8 @@ void renderOverviewWindow(const SRenderParams& params) {
     params.window->positionAnimation()->value() = params.monitor->m_position + params.windowBox.pos() / params.monitor->m_scale - params.window->m_floatingOffset;
     params.window->sizeAnimation()->value()     = params.windowBox.size() / params.monitor->m_scale;
     params.window->m_animatingIn                 = true;
+    params.window->m_ruleApplicator->borderSize().set(0, Desktop::Types::PRIORITY_SET_PROP);
+    params.window->m_borderSizeCacheDirty = true;
     COverviewAnimatedVariableAccess::setBeingAnimated(params.window->sizeAnimation().get(), true);
     if (OVERRIDEWORKSPACEOFFSET)
         WORKSPACE->m_renderOffset->value() = {};
@@ -914,6 +919,9 @@ void renderOverviewWindow(const SRenderParams& params) {
         params.window->positionAnimation()->value() = previousWindowPos;
         params.window->sizeAnimation()->value()     = previousWindowSize;
         params.window->m_animatingIn                 = previousAnimatingIn;
+        params.window->m_ruleApplicator->borderSizeOverride(previousBorderSize);
+        params.window->m_borderSizeCacheDirty = previousBorderCacheDirty;
+        params.window->m_cachedBorderSize     = previousCachedBorderSize;
         COverviewAnimatedVariableAccess::setBeingAnimated(params.window->sizeAnimation().get(), previousSizeAnimating);
         if (OVERRIDEWORKSPACEOFFSET && WORKSPACE)
             WORKSPACE->m_renderOffset->value() = previousWorkspaceOffset;
