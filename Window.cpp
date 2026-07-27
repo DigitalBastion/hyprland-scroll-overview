@@ -491,7 +491,10 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
     if (metrics.borderSize <= 0.F)
         return;
 
-    auto grad = window->m_realBorderColor;
+    const Config::CGradientValueData activeFallback{CHyprColor{0x33ccffee}};
+    const Config::CGradientValueData inactiveFallback{CHyprColor{0x595959aa}};
+    const auto grad = selected ? window->m_ruleApplicator->activeBorderColor().valueOr(activeFallback) :
+                                 window->m_ruleApplicator->inactiveBorderColor().valueOr(inactiveFallback);
 
     const CBox borderBox = getOverviewBorderBox(windowBox, metrics);
 
