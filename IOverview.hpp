@@ -47,6 +47,7 @@ const std::vector<SP<IOverview>>& scrollOverviews();
 SP<IOverview>                     scrollOverviewForMonitor(PHLMONITOR monitor);
 SP<IOverview>                     scrollOverviewAt(const Vector2D& point);
 SP<IOverview>                     activeScrollOverview();
+void                              closeAll();
 void                              registerScrollOverview(const SP<IOverview>& overview);
 void                              unregisterScrollOverview(IOverview* overview);
 void                              clearScrollOverviews();

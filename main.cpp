@@ -253,11 +253,7 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
 
     if (ACTION == "off" || ACTION == "close" || ACTION == "disable") {
         if (TARGET.empty() || TARGET == "all") {
-            const auto OPEN = scrollOverviews();
-            for (const auto& overview : OPEN) {
-                if (overview)
-                    overview->close();
-            }
+            closeAll();
             return {};
         }
 

@@ -47,6 +47,14 @@ SP<IOverview> activeScrollOverview() {
     return g_scrollOverviews.empty() ? SP<IOverview>{} : g_scrollOverviews.front();
 }
 
+void closeAll() {
+    const auto overviews = g_scrollOverviews;
+    for (const auto& overview : overviews) {
+        if (overview)
+            overview->close();
+    }
+}
+
 void registerScrollOverview(const SP<IOverview>& overview) {
     if (!overview || std::ranges::find(g_scrollOverviews, overview) != g_scrollOverviews.end())
         return;

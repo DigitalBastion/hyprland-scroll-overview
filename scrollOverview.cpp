@@ -1130,7 +1130,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
 
             selectHoveredWorkspace();
             selectWindowAtOverviewCursor(true);
-            close();
+            closeAll();
         };
         const auto     finishWindowDragOrClick = [&](uint32_t button, bool allowClick) {
             const float CLICK_MAX_DRAG_DISTANCE = 10.F * (pMonitor ? pMonitor->m_scale : 1.F);
@@ -1295,7 +1295,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
 
         selectWindowAtOverviewCursor();
 
-        close();
+        closeAll();
     };
 
     auto onMouseAxis = [this](IPointer::SAxisEvent e, Event::SCallbackInfo& info) {
@@ -1441,7 +1441,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
                 moveSelection("down");
                 break;
             case XKB_KEY_Return:
-            case XKB_KEY_KP_Enter: close(); break;
+            case XKB_KEY_KP_Enter: closeAll(); break;
             default: return;
         }
 
