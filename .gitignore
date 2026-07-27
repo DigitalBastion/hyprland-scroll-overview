@@ -1,1 +1,11 @@
+build/
+.build/
+.cache/
 scrolloverview.so
+
+# Nix
+result/
+result
+result-*
+.envrc
+.direnv/

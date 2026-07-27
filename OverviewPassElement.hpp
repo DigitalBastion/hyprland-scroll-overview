@@ -1,19 +1,23 @@
 #pragma once
 #include "globals.hpp"
+#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/render/pass/PassElement.hpp>
 
 class CScrollOverviewPassElement : public IPassElement {
   public:
     CScrollOverviewPassElement();
-    virtual ~CScrollOverviewPassElement() = default;
+    ~CScrollOverviewPassElement() override = default;
 
-    virtual std::vector<UP<IPassElement>> draw();
-    virtual bool                needsLiveBlur();
-    virtual bool                needsPrecomputeBlur();
-    virtual std::optional<CBox> boundingBox();
-    virtual CRegion             opaqueRegion();
+    std::vector<UP<IPassElement>> draw() override;
+    ePassElementType              type() override {
+        return EK_CUSTOM;
+    }
+    bool                          needsLiveBlur() override;
+    bool                          needsPrecomputeBlur() override;
+    std::optional<CBox>           boundingBox() override;
+    CRegion                       opaqueRegion() override;
 
-    virtual const char*         passName() {
+    const char*                   passName() override {
         return "CScrollOverviewPassElement";
     }
 
@@ -32,22 +36,24 @@ class COverviewShadowPassElement : public IPassElement {
         float         roundingPower = 2.F;
         int           range         = 0;
         int           renderPower   = 0;
-        CHyprColor    color;
+        Config::CGradientValueData color;
         float         alpha        = 1.F;
         bool          ignoreWindow = true;
-        bool          sharp        = false;
     };
 
     COverviewShadowPassElement(const SData& data_);
-    virtual ~COverviewShadowPassElement() = default;
+    ~COverviewShadowPassElement() override = default;
 
-    virtual std::vector<UP<IPassElement>> draw();
-    virtual bool                needsLiveBlur();
-    virtual bool                needsPrecomputeBlur();
-    virtual std::optional<CBox> boundingBox();
-    virtual CRegion             opaqueRegion();
+    std::vector<UP<IPassElement>> draw() override;
+    ePassElementType              type() override {
+        return EK_CUSTOM;
+    }
+    bool                          needsLiveBlur() override;
+    bool                          needsPrecomputeBlur() override;
+    std::optional<CBox>           boundingBox() override;
+    CRegion                       opaqueRegion() override;
 
-    virtual const char*         passName() {
+    const char*                   passName() override {
         return "COverviewShadowPassElement";
     }
 
