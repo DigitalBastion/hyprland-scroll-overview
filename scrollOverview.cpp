@@ -7,6 +7,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <unordered_set>
 #include <linux/input-event-codes.h>
 #include <state/WorkspaceState.hpp>
 #define private public
@@ -67,7 +68,19 @@
 
 static PHLWINDOW getOverviewFullscreenVisibilityWindow(const PHLWORKSPACE& workspace, const PHLWINDOW& fallback = {});
 static constexpr const char* OVERVIEW_SUBMAP = "scrolloverview";
-static CScrollOverview*      g_pointerGrabOverview = nullptr;
+static CScrollOverview*             g_pointerGrabOverview = nullptr;
+static std::unordered_set<uint32_t> g_topLayerPointerButtons;
+
+static void releaseTopLayerPointerButtons(uint32_t timeMs) {
+    if (g_topLayerPointerButtons.empty())
+        return;
+
+    for (const auto button : g_topLayerPointerButtons)
+        g_pSeatManager->sendPointerButton(timeMs, button, WL_POINTER_BUTTON_STATE_RELEASED);
+
+    g_topLayerPointerButtons.clear();
+    g_pSeatManager->sendPointerFrame();
+}
 
 static void removeOverview(CScrollOverview* overview) {
     const auto PMONITOR = overview ? overview->pMonitor.lock() : PHLMONITOR{};
@@ -1071,8 +1084,11 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         if (info.cancelled)
             return;
 
+        const bool FORWARDEDTOPLAYERRELEASE =
+            event.state == WL_POINTER_BUTTON_STATE_RELEASED && g_topLayerPointerButtons.contains(event.button);
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
-        if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) || (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this))
+        if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) ||
+            (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this && !FORWARDEDTOPLAYERRELEASE))
             return;
 
         const bool RELEASESPOINTERGRAB = event.state == WL_POINTER_BUTTON_STATE_RELEASED;
@@ -1081,7 +1097,26 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
                 g_pointerGrabOverview = nullptr;
         });
 
-        if (!dragPendingPrimary && !resizePointerDown && !scrollingPanPointerDown && !dragActiveWindow && !resizeActiveWindow && isPointerOnTopLayer(pMonitor.lock())) {
+        const bool POINTERONTOPLAYER =
+            !dragPendingPrimary && !resizePointerDown && !scrollingPanPointerDown && !dragActiveWindow && !resizeActiveWindow && isPointerOnTopLayer(pMonitor.lock());
+
+        if (FORWARDEDTOPLAYERRELEASE ||
+            (event.state == WL_POINTER_BUTTON_STATE_PRESSED && POINTERONTOPLAYER && usesSubmapKeybinds && isOverviewSubmapActive())) {
+            submapMouseClickPending = false;
+            submapMouseClickButton  = 0;
+
+            info.cancelled = true;
+            if (event.state == WL_POINTER_BUTTON_STATE_PRESSED)
+                g_topLayerPointerButtons.emplace(event.button);
+            else
+                g_topLayerPointerButtons.erase(event.button);
+
+            g_pSeatManager->sendPointerButton(event.timeMs, event.button, event.state);
+            g_pSeatManager->sendPointerFrame();
+            return;
+        }
+
+        if (POINTERONTOPLAYER) {
             submapMouseClickPending = false;
             submapMouseClickButton  = 0;
             return;
@@ -1098,6 +1133,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         // events
         // before they reach Hyprland's input manager, leaving it stuck thinking
         // buttons are still pressed, which locks focus.
+        releaseTopLayerPointerButtons(event.timeMs);
         g_pInputManager->releaseAllMouseButtons();
 
         const bool     LEFT_HANDED        = ScrollOverview::Config::getLeftHanded();
@@ -5029,6 +5065,7 @@ void CScrollOverview::setClosing(bool closing_) {
 void CScrollOverview::releaseInputListeners() {
     if (scrollingPanPointerDown)
         endScrollingPan();
+    releaseTopLayerPointerButtons(Time::millis(Time::steadyNow()));
     clearDragPending();
     submapMouseClickPending = false;
     submapMouseClickButton  = 0;
