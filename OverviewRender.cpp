@@ -5,10 +5,6 @@
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 
-using namespace Render;
-using Render::GL::CHyprOpenGLImpl;
-using Render::GL::g_pHyprOpenGL;
-
 namespace OverviewRender {
 
 void flushPass(PHLMONITOR monitor) {

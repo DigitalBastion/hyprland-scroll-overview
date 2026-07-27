@@ -46,7 +46,6 @@
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/plugins/PluginSystem.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
-#include <hyprland/src/render/pass/ClearPassElement.hpp>
 #include <hyprland/src/render/pass/Pass.hpp>
 #include <hyprland/src/render/pass/ClearPassElement.hpp>
 #include <hyprland/src/render/pass/PreBlurElement.hpp>
@@ -1419,8 +1418,8 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         const auto KEYSYM = getOverviewKeysym(event);
         const auto MODS   = g_pInputManager->getModsFromAllKBs() & ~(HL_MODIFIER_CAPS | HL_MODIFIER_MOD2);
 
-        if ((KEYSYM == XKB_KEY_Return || KEYSYM == XKB_KEY_KP_Enter || KEYSYM == XKB_KEY_Escape || KEYSYM == XKB_KEY_Left || KEYSYM == XKB_KEY_KP_Left ||
-             KEYSYM == XKB_KEY_Right || KEYSYM == XKB_KEY_KP_Right || KEYSYM == XKB_KEY_Up || KEYSYM == XKB_KEY_KP_Up || KEYSYM == XKB_KEY_Down || KEYSYM == XKB_KEY_KP_Down) &&
+        if ((KEYSYM == XKB_KEY_Return || KEYSYM == XKB_KEY_KP_Enter || KEYSYM == XKB_KEY_Left || KEYSYM == XKB_KEY_KP_Left || KEYSYM == XKB_KEY_Right ||
+             KEYSYM == XKB_KEY_KP_Right || KEYSYM == XKB_KEY_Up || KEYSYM == XKB_KEY_KP_Up || KEYSYM == XKB_KEY_Down || KEYSYM == XKB_KEY_KP_Down) &&
             MODS != 0)
             return;
 
@@ -1442,7 +1441,6 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
                 moveSelection("down");
                 break;
             case XKB_KEY_Return:
-            case XKB_KEY_Escape:
             case XKB_KEY_KP_Enter: close(); break;
             default: return;
         }
@@ -4166,12 +4164,8 @@ void CScrollOverview::redrawAll(bool forcelowres) {
 }
 
 void CScrollOverview::damage() {
-    const auto MONITOR = pMonitor.lock();
-    if (!MONITOR)
-        return;
-
     blockDamageReporting = true;
-    g_pHyprRenderer->damageMonitor(MONITOR);
+    g_pHyprRenderer->damageMonitor(pMonitor.lock());
     blockDamageReporting = false;
 }
 
@@ -4263,19 +4257,8 @@ bool CScrollOverview::shouldAllowRealtimePreviewSchedule() {
     return false;
 }
 
-void CScrollOverview::stopRealtimePreviewTimer() {
-    realtimePreviewTimerArmed  = false;
-    realtimePreviewTimerDue    = {};
-    realtimePreviewFrameQueued = false;
-
-    if (realtimePreviewTimer) {
-        wl_event_source_remove(realtimePreviewTimer);
-        realtimePreviewTimer = nullptr;
-    }
-}
-
 void CScrollOverview::schedulePreviewFrameAfter(std::chrono::milliseconds delay) {
-    if (!realtimePreviewTimer || closing || !pMonitor.lock())
+    if (!realtimePreviewTimer)
         return;
 
     const auto DELAY = std::max<int>(1, sc<int>(delay.count()));
@@ -4309,21 +4292,6 @@ int CScrollOverview::realtimePreviewTimerCallback(void* data) {
     OVERVIEW->realtimePreviewTimerArmed  = false;
     OVERVIEW->realtimePreviewTimerDue    = {};
     OVERVIEW->realtimePreviewFrameQueued = false;
-
-    if (!OVERVIEW->pMonitor.lock()) {
-        if (!OVERVIEW->closing && g_pScrollOverview.get() == OVERVIEW)
-            removeOverview({});
-        else
-            OVERVIEW->stopRealtimePreviewTimer();
-
-        return 0;
-    }
-
-    if (OVERVIEW->closing) {
-        OVERVIEW->stopRealtimePreviewTimer();
-        return 0;
-    }
-
     OVERVIEW->damage();
     OVERVIEW->scheduleMinimumPreviewFrame();
     return 0;

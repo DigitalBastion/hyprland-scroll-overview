@@ -7,8 +7,6 @@
 #include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
-#include <hyprland/src/config/values/types/FloatValue.hpp>
-#include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
@@ -16,11 +14,6 @@
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
 #include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
-
-extern "C" {
-#include <lauxlib.h>
-#include <lua.h>
-}
 
 #include <hyprutils/string/ConstVarList.hpp>
 using namespace Hyprutils::String;
@@ -58,14 +51,6 @@ static bool renderingOverview = false;
 static bool damageFromSurface = false;
 static PHLMONITORREF renderingOverviewMonitor;
 static bool g_scrollOverviewHooksActive = false;
-
-static bool addOverviewIntConfig(const char* name, Config::INTEGER value) {
-    return HyprlandAPI::addConfigValueV2(SCROLLOVERVIEW_HANDLE, makeShared<Config::Values::CIntValue>(name, "", value));
-}
-
-static bool addOverviewFloatConfig(const char* name, Config::FLOAT value) {
-    return HyprlandAPI::addConfigValueV2(SCROLLOVERVIEW_HANDLE, makeShared<Config::Values::CFloatValue>(name, "", value));
-}
 
 static void failNotif(const std::string& reason);
 
@@ -329,20 +314,6 @@ static SDispatchResult onWindowDispatcher(std::string arg) {
 
     OVERVIEW->windowDispatcherAction(arg);
     return {};
-}
-
-static int luaOverview(lua_State* L) {
-    const std::string arg    = luaL_optstring(L, 1, "toggle");
-    const auto        result = onOverviewDispatcher(arg);
-
-    if (!result.success) {
-        lua_pushnil(L);
-        lua_pushstring(L, result.error.c_str());
-        return 2;
-    }
-
-    lua_pushboolean(L, true);
-    return 1;
 }
 
 static void failNotif(const std::string& reason) {

@@ -1,18 +1,13 @@
 #include "Window.hpp"
 #include <algorithm>
-#include <cairo/cairo.h>
 #include <cmath>
 #include <dlfcn.h>
-#include <drm_fourcc.h>
 #include <functional>
-#include <pango/pangocairo.h>
-#include <unordered_map>
 #define private public
 #define protected public
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
-#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -21,7 +16,6 @@
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/managers/EventManager.hpp>
 #include <hyprland/src/plugins/PluginSystem.hpp>
-#include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/pass/Pass.hpp>
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
@@ -39,10 +33,6 @@
 #include "Config.hpp"
 #include "OverviewPassElement.hpp"
 #include "OverviewRender.hpp"
-
-using namespace Render;
-using Render::GL::CHyprOpenGLImpl;
-using Render::GL::g_pHyprOpenGL;
 
 namespace OverviewWindow {
 namespace {
@@ -138,7 +128,7 @@ static float getOverviewWindowTargetOpacity(const PHLWINDOW& window) {
 }
 
 
-static void adjustStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONITOR monitor, float renderScale, size_t firstElement) {
+static void roundStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONITOR monitor, float renderScale, size_t firstElement) {
     if (!window || !monitor)
         return;
 
@@ -147,7 +137,9 @@ static void adjustStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONIT
 
     const int   rounding      = sc<int>(std::round(window->rounding() * monitor->m_scale * renderScale));
     const float roundingPower = window->roundingPower();
-    const CBox  monitorClip   = CBox{{}, monitor->m_transformedSize};
+
+    if (rounding <= 0)
+        return;
 
     auto& passElements = g_pHyprRenderer->m_renderPass.m_passElements;
     for (size_t i = firstElement; i < passElements.size(); ++i) {
@@ -159,13 +151,9 @@ static void adjustStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONIT
         if (!surfacePassElement || surfacePassElement->m_data.pWindow != window || surfacePassElement->m_data.popup)
             continue;
 
-        surfacePassElement->m_data.clipBox = monitorClip;
-
-        if (rounding > 0) {
-            surfacePassElement->m_data.dontRound     = false;
-            surfacePassElement->m_data.rounding      = rounding;
-            surfacePassElement->m_data.roundingPower = roundingPower;
-        }
+        surfacePassElement->m_data.dontRound     = false;
+        surfacePassElement->m_data.rounding      = rounding;
+        surfacePassElement->m_data.roundingPower = roundingPower;
     }
 }
 
@@ -525,72 +513,6 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(data));
 }
 
-static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, bool closing) {
-    if (!monitor || !window)
-        return;
-
-    if (!getOverviewTitleEnabled())
-        return;
-
-    const std::string& title = !window->m_title.empty() ? window->m_title : window->m_class;
-    if (title.empty())
-        return;
-
-    const float titleAlpha = getOverviewTitleAlpha(metrics.renderScale, closing, metrics.targetOpacity);
-    if (titleAlpha <= 0.01F)
-        return;
-
-    const float uiScale     = std::max(0.1F, metrics.pxScale);
-    const int   fontPx      = std::max(1, sc<int>(std::round(getOverviewTitleFontSize() * uiScale)));
-    const float paddingX    = std::max(1.F, std::round(12.F * uiScale));
-    const float paddingY    = std::max(1.F, std::round(6.F * uiScale));
-    const float titleHeight = std::max(1.F, std::round(fontPx + paddingY * 2.F));
-    const float separatorX  = 1.25F;
-
-    if (windowBox.width <= paddingX * 2.F + separatorX * 2.F || windowBox.height <= titleHeight)
-        return;
-
-    if (titleHeight > windowBox.height * 0.75F)
-        return;
-
-    CBox titleBox = {windowBox.x + separatorX, windowBox.y, windowBox.width - separatorX * 2.F, titleHeight};
-    if (titleBox.empty())
-        return;
-
-    CBox textBox = {titleBox.x + paddingX, titleBox.y, titleBox.width - paddingX * 2.F, titleBox.height};
-    textBox.round();
-    if (textBox.empty())
-        return;
-
-    CHyprColor backgroundColor = getOverviewTitleBackgroundColor();
-    backgroundColor.a = std::max(backgroundColor.a, 0.85);
-    backgroundColor.a *= titleAlpha;
-    if (backgroundColor.a > 0.F) {
-        CRegion damage{CBox{{}, monitor->m_transformedSize}};
-        g_pHyprOpenGL->renderRect(titleBox, backgroundColor,
-                                  {.damage = &damage});
-    }
-
-    int64_t    textColorRaw = 0;
-    CHyprColor textColor    = getOverviewTitleTextColor(&textColorRaw);
-    textColor.a             = 1.F;
-    if (textColor.a <= 0.F)
-        return;
-
-    const int textWidth  = sc<int>(std::round(textBox.width));
-    const int textHeight = sc<int>(std::round(textBox.height));
-    auto      texture    = getOverviewTitleTexture(window, title, textWidth, textHeight, fontPx, textColorRaw, textColor);
-    if (!texture)
-        return;
-
-    CRegion                              damage{CBox{{}, monitor->m_transformedSize}};
-    CHyprOpenGLImpl::STextureRenderData data;
-    data.damage   = &damage;
-    data.a        = titleAlpha;
-    data.allowDim = false;
-    g_pHyprOpenGL->renderTexture(texture, textBox, data);
-}
-
 static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha) {
     if (!monitor || !window || !window->m_group || window->m_group->size() < 1)
         return;
@@ -829,8 +751,7 @@ static SOverviewCustomDecorationRenderState renderOverviewCustomDecorations(PHLM
             continue;
 
         if (layer == DECORATION_LAYER_UNDER && isOverviewHyprbarDecoration(deco.get())) {
-            // Hyprbars registers plugin config values independently; avoid touching them from this plugin
-            // until both plugins are on the same 0.55 config API.
+            renderOverviewHyprbarDecoration(state, monitor, window, deco.get(), windowBox, metrics);
             continue;
         }
 
@@ -959,7 +880,6 @@ void renderOverviewWindow(const SRenderParams& params) {
         renderOverviewWindowBorder(params.monitor, params.window, params.windowBox, metrics, params.selected);
 
     OverviewRender::flushPass(params.monitor);
-    renderOverviewWindowTitle(params.monitor, params.window, params.windowBox, metrics, params.closing);
 }
 
 } // namespace OverviewWindow

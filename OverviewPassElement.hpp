@@ -20,10 +20,6 @@ class CScrollOverviewPassElement : public IPassElement {
     const char*                   passName() override {
         return "CScrollOverviewPassElement";
     }
-
-    virtual ePassElementType    type() {
-        return EK_CUSTOM;
-    }
 };
 
 class COverviewShadowPassElement : public IPassElement {
@@ -55,10 +51,6 @@ class COverviewShadowPassElement : public IPassElement {
 
     const char*                   passName() override {
         return "COverviewShadowPassElement";
-    }
-
-    virtual ePassElementType    type() {
-        return EK_CUSTOM;
     }
 
   private:

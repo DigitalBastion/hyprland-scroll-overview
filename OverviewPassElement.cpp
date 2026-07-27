@@ -25,8 +25,6 @@
 #include "Config.hpp"
 #include "IOverview.hpp"
 
-using Render::GL::g_pHyprOpenGL;
-
 static CRegion roundedRectRegion(const CBox& box, int rounding, float roundingPower) {
     const auto ROUNDEDBOX = box.copy().round();
     const int  x          = sc<int>(ROUNDEDBOX.x);
