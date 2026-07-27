@@ -1311,6 +1311,10 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         if (closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
             return;
 
+        // Let universal Super-wheel bindings work while the overview submap is active.
+        if (g_pInputManager->getModsFromAllKBs() & HL_MODIFIER_META)
+            return;
+
         info.cancelled = true;
 
         const auto ACTION = e.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? ScrollOverview::Config::getHorizontalScrollAction(layout) :
