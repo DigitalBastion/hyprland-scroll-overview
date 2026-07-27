@@ -514,7 +514,11 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
 }
 
 static void renderOverviewWindowTitle(const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics) {
-    if (!window || !ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled") || window->m_title.empty())
+    if (!window || !ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled"))
+        return;
+
+    const std::string& title = window->m_title.empty() ? window->m_class : window->m_title;
+    if (title.empty())
         return;
 
     const float scale      = std::max(0.1F, metrics.pxScale);
@@ -536,7 +540,7 @@ static void renderOverviewWindowTitle(const PHLWINDOW& window, const CBox& windo
     CHyprColor textColor = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:text_color")));
     textColor.a *= metrics.targetOpacity;
     const int maxWidth = std::max(1, sc<int>(std::round(titleBox.width - padding * 2.F)));
-    auto      texture  = g_pHyprRenderer->renderText(window->m_title, textColor,
+    auto      texture  = g_pHyprRenderer->renderText(title, textColor,
         std::max(1, sc<int>(std::round(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:font_size") * scale))), false,
         ScrollOverview::Config::getValue<std::string>("misc:font_family"), maxWidth, 700);
     if (!texture || !texture->ok())

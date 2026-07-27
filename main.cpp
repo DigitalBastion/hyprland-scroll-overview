@@ -246,8 +246,10 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
         return {.success = false, .error = "already swiping"};
 
     if (ACTION == "select") {
-        if (ACTIVE)
+        if (ACTIVE) {
             ACTIVE->selectHoveredWorkspace();
+            ACTIVE->close();
+        }
         return {};
     }
 
