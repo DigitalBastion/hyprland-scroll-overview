@@ -1068,6 +1068,9 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
     };
 
     auto onMouseButton = [this](IPointer::SButtonEvent event, Event::SCallbackInfo& info) {
+        if (info.cancelled)
+            return;
+
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
         if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) || (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this))
             return;
