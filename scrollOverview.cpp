@@ -9,6 +9,7 @@
 #include <optional>
 #include <unordered_set>
 #include <linux/input-event-codes.h>
+#include <state/MonitorState.hpp>
 #include <state/WorkspaceState.hpp>
 #define private public
 #define protected public
@@ -70,6 +71,24 @@ static PHLWINDOW getOverviewFullscreenVisibilityWindow(const PHLWORKSPACE& works
 static constexpr const char* OVERVIEW_SUBMAP = "scrolloverview";
 static CScrollOverview*             g_pointerGrabOverview = nullptr;
 static std::unordered_set<uint32_t> g_topLayerPointerButtons;
+
+static void restoreActiveWorkspaceVisibility() {
+    for (const auto& monitor : State::monitorState()->monitors()) {
+        if (!monitor)
+            continue;
+
+        for (const auto& workspace : {monitor->m_activeWorkspace, monitor->m_activeSpecialWorkspace}) {
+            if (!workspace)
+                continue;
+
+            workspace->m_visible = true;
+            workspace->m_alpha->setValueAndWarp(1.F);
+            workspace->m_renderOffset->setValueAndWarp(Vector2D{});
+        }
+
+        g_pHyprRenderer->damageMonitor(monitor);
+    }
+}
 
 static void releaseTopLayerPointerButtons(uint32_t timeMs) {
     if (g_topLayerPointerButtons.empty())
@@ -909,8 +928,10 @@ CScrollOverview::~CScrollOverview() {
     restoreForcedWindowVisibility();
     restoreForcedLayerVisibility();
     images.clear(); // otherwise we get a vram leak
-    if (scrollOverviews().empty())
+    if (scrollOverviews().empty()) {
+        restoreActiveWorkspaceVisibility();
         Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
+    }
     if (const auto MONITOR = pMonitor.lock())
         MONITOR->m_blurFBDirty = true;
 }
