@@ -1261,6 +1261,12 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
         if (closing)
             return;
 
+        const auto MODS = g_pInputManager->getModsFromAllKBs();
+
+        // Preserve Hyprland's universal SUPER wheel binds while overview is open.
+        if (MODS & HL_MODIFIER_META)
+            return;
+
         info.cancelled = true;
 
         const auto ACTION = e.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? ScrollOverview::Config::getHorizontalScrollAction(layout) :
@@ -1276,7 +1282,11 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_) : started
             if (!scrollStepAllowed(e.timeMs))
                 return;
 
-            if (ACTION == ScrollOverview::Config::EScrollAction::WORKSPACE)
+            // SHIFT+wheel follows scrolling-layout columns in the active
+            // overview workspace, independent of the normal wheel mode.
+            if (MODS & HL_MODIFIER_SHIFT)
+                moveScrollingColumnSelection(e.delta > 0);
+            else if (ACTION == ScrollOverview::Config::EScrollAction::WORKSPACE)
                 moveViewportWorkspace(e.delta > 0);
             else
                 moveScrollingColumnSelection(e.delta > 0);
