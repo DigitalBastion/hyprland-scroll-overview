@@ -135,6 +135,29 @@ static bool isOverviewSubmapActive() {
     return g_pKeybindManager && g_pKeybindManager->getCurrentSubmap().name == OVERVIEW_SUBMAP;
 }
 
+static bool hasMatchingModifiedScrollKeybind(const IPointer::SAxisEvent& event) {
+    if (!g_pKeybindManager || !g_pInputManager || event.source != WL_POINTER_AXIS_SOURCE_WHEEL || event.delta == 0.0)
+        return false;
+
+    std::string key;
+    if (event.axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
+        key = event.delta > 0 ? "mouse_down" : "mouse_up";
+    else if (event.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL)
+        key = event.delta < 0 ? "mouse_left" : "mouse_right";
+    else
+        return false;
+
+    const auto MODS = g_pInputManager->getModsFromAllKBs();
+    if ((MODS & ~(HL_MODIFIER_CAPS | HL_MODIFIER_MOD2)) == 0)
+        return false;
+
+    const auto SUBMAP = g_pKeybindManager->getCurrentSubmap();
+    return std::ranges::any_of(g_pKeybindManager->m_keybinds, [&](const auto& keybind) {
+        return keybind && keybind->enabled && !keybind->shadowed && keybind->key == key && (keybind->modmask == MODS || keybind->ignoreMods) &&
+            (keybind->submap.name == SUBMAP.name || keybind->submapUniversal);
+    });
+}
+
 static bool isTopLayerFocused(PHLMONITOR monitor) {
     const auto FOCUSEDSURFACE = g_pSeatManager->m_state.keyboardFocus.lock();
 
@@ -1362,8 +1385,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         if (closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
             return;
 
-        const auto MODS = g_pInputManager->getModsFromAllKBs() & ~(HL_MODIFIER_CAPS | HL_MODIFIER_MOD2);
-        if (usesSubmapKeybinds && isOverviewSubmapActive() && MODS != 0)
+        if (usesSubmapKeybinds && isOverviewSubmapActive() && hasMatchingModifiedScrollKeybind(e))
             return;
 
         info.cancelled = true;
