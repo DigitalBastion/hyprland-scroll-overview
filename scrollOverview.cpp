@@ -1362,6 +1362,10 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         if (closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
             return;
 
+        const auto MODS = g_pInputManager->getModsFromAllKBs() & ~(HL_MODIFIER_CAPS | HL_MODIFIER_MOD2);
+        if (usesSubmapKeybinds && isOverviewSubmapActive() && MODS != 0)
+            return;
+
         info.cancelled = true;
 
         const auto ACTION = e.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? ScrollOverview::Config::getHorizontalScrollAction(layout) :
