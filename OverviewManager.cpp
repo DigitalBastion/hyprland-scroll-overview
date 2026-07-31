@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include <hyprland/src/desktop/state/FocusState.hpp>
-#include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 
 static std::vector<SP<IOverview>> g_scrollOverviews;
@@ -31,11 +30,6 @@ SP<IOverview> scrollOverviewAt(const Vector2D& point) {
 }
 
 SP<IOverview> activeScrollOverview() {
-    if (g_pInputManager) {
-        if (const auto overview = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()))
-            return overview;
-    }
-
     if (const auto monitor = Desktop::focusState()->monitor()) {
         if (const auto overview = scrollOverviewForMonitor(monitor))
             return overview;

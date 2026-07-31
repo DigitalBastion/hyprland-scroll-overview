@@ -27,6 +27,7 @@
 #include <hyprland/src/render/decorations/DecorationPositioner.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
+#include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
 #undef protected
 #undef private
@@ -126,6 +127,104 @@ static float getOverviewWindowTargetOpacity(const PHLWINDOW& window) {
 
     return std::clamp(targetOpacity, 0.F, 1.F);
 }
+
+struct SOverviewPseudoFocusState {
+    PHLWINDOW                     window;
+    SP<Desktop::CFocusState>       focusState;
+    PHLWINDOWREF                  previousFocusWindow;
+    WP<CWLSurfaceResource>         previousFocusSurface;
+    Config::CGradientValueData     previousBorderColor;
+    Config::CGradientValueData     previousBorderColorPrevious;
+    Config::CGradientValueData     previousShadowColor;
+    Config::CGradientValueData     previousShadowColorPrevious;
+    Config::CGradientValueData     previousGlowColor;
+    Config::CGradientValueData     previousGlowColorPrevious;
+    float                          previousOpacity = 1.F;
+    float                          previousDim     = 0.F;
+    bool                           active          = false;
+
+    SOverviewPseudoFocusState(const PHLWINDOW& window_, const PHLWINDOW& pseudoFocusWindow) : window(window_) {
+        if (!window || !pseudoFocusWindow)
+            return;
+
+        active                      = true;
+        focusState                  = Desktop::focusState();
+        previousFocusWindow         = focusState->m_focusWindow;
+        previousFocusSurface        = focusState->m_focusSurface;
+        previousBorderColor         = window->m_realBorderColor;
+        previousBorderColorPrevious = window->m_realBorderColorPrevious;
+        previousShadowColor         = window->m_realShadowColor;
+        previousShadowColorPrevious = window->m_realShadowColorPrevious;
+        previousGlowColor           = window->m_realGlowColor;
+        previousGlowColorPrevious   = window->m_realGlowColorPrevious;
+        previousOpacity             = window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value();
+        previousDim                 = window->m_dimPercent->value();
+
+        focusState->m_focusWindow = pseudoFocusWindow;
+        if (pseudoFocusWindow->wlSurface() && pseudoFocusWindow->wlSurface()->resource())
+            focusState->m_focusSurface = pseudoFocusWindow->wlSurface()->resource();
+
+        const bool ISACTIVE    = window == pseudoFocusWindow;
+        const bool GROUPLOCKED = window->m_group ? window->m_group->locked() || g_pKeybindManager->m_groupsLocked : g_pKeybindManager->m_groupsLocked;
+        const bool NOGROUP     = window->m_groupRules & Desktop::View::GROUP_DENY;
+        const auto BORDERKEY   = window->m_group ?
+            (ISACTIVE ? (GROUPLOCKED ? "group:col.border_locked_active" : "group:col.border_active") :
+                        (GROUPLOCKED ? "group:col.border_locked_inactive" : "group:col.border_inactive")) :
+            (ISACTIVE ? (NOGROUP ? "general:col.nogroup_border_active" : "general:col.active_border") :
+                        (NOGROUP ? "general:col.nogroup_border" : "general:col.inactive_border"));
+        const auto BORDERCOLOR = ScrollOverview::Config::getValue<Config::CGradientValueData>(BORDERKEY);
+
+        window->m_realBorderColor =
+            ISACTIVE ? window->m_ruleApplicator->activeBorderColor().valueOr(BORDERCOLOR) : window->m_ruleApplicator->inactiveBorderColor().valueOr(BORDERCOLOR);
+        window->m_realBorderColorPrevious = window->m_realBorderColor;
+
+        const auto SHADOWACTIVE   = ScrollOverview::Config::getValue<Config::CGradientValueData>("decoration:shadow:color");
+        const auto SHADOWINACTIVE = Config::mgr()->getConfigValue("decoration:shadow:color_inactive").setByUser ?
+            ScrollOverview::Config::getValue<Config::CGradientValueData>("decoration:shadow:color_inactive") :
+            SHADOWACTIVE;
+        const auto GLOWACTIVE     = ScrollOverview::Config::getValue<Config::CGradientValueData>("decoration:glow:color");
+        const auto GLOWINACTIVE   = Config::mgr()->getConfigValue("decoration:glow:color_inactive").setByUser ?
+            ScrollOverview::Config::getValue<Config::CGradientValueData>("decoration:glow:color_inactive") :
+            GLOWACTIVE;
+
+        if (window->isX11OverrideRedirect() || window->m_X11DoesntWantBorders) {
+            const Config::CGradientValueData TRANSPARENT{CHyprColor{0, 0, 0, 0}};
+            window->m_realShadowColor = TRANSPARENT;
+            window->m_realGlowColor   = TRANSPARENT;
+        } else {
+            window->m_realShadowColor = ISACTIVE ? SHADOWACTIVE : SHADOWINACTIVE;
+            window->m_realGlowColor   = ISACTIVE ? GLOWACTIVE : GLOWINACTIVE;
+        }
+        window->m_realShadowColorPrevious = window->m_realShadowColor;
+        window->m_realGlowColorPrevious   = window->m_realGlowColor;
+
+        window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value() = getOverviewWindowTargetOpacity(window);
+
+        const bool ISMODALSHADOWED = window->m_xdgSurface && window->m_xdgSurface->m_toplevel && window->m_xdgSurface->m_toplevel->anyChildModal();
+        float      dim             = ISACTIVE || window->m_ruleApplicator->noDim().valueOrDefault() || !ScrollOverview::Config::getValue<bool>("decoration:dim_inactive") ?
+                 0.F :
+                 ScrollOverview::Config::getValue<float>("decoration:dim_strength");
+        if (ISMODALSHADOWED && ScrollOverview::Config::getValue<bool>("decoration:dim_modal"))
+            dim += (1.F - dim) / 2.F;
+        window->m_dimPercent->value() = dim;
+    }
+
+    ~SOverviewPseudoFocusState() {
+        if (!active)
+            return;
+
+        window->m_realBorderColor         = previousBorderColor;
+        window->m_realBorderColorPrevious = previousBorderColorPrevious;
+        window->m_realShadowColor         = previousShadowColor;
+        window->m_realShadowColorPrevious = previousShadowColorPrevious;
+        window->m_realGlowColor           = previousGlowColor;
+        window->m_realGlowColorPrevious   = previousGlowColorPrevious;
+        window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value() = previousOpacity;
+        window->m_dimPercent->value()                 = previousDim;
+        focusState->m_focusWindow                     = previousFocusWindow;
+        focusState->m_focusSurface                    = previousFocusSurface;
+    }
+};
 
 
 static void roundStandaloneWindowPassElements(const PHLWINDOW& window, PHLMONITOR monitor, float renderScale, size_t firstElement) {
@@ -822,6 +921,7 @@ void renderOverviewWindow(const SRenderParams& params) {
     if (!params.window)
         return;
 
+    const SOverviewPseudoFocusState pseudoFocusState{params.window, params.pseudoFocusWindow};
     const bool                   fullscreen   = Fullscreen::controller()->isFullscreen(params.window);
     const SOverviewWindowMetrics metrics      = getOverviewWindowMetrics(params.monitor, params.window, params.renderScale);
 

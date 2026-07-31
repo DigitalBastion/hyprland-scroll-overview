@@ -9,6 +9,8 @@
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/managers/KeybindManager.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
@@ -223,6 +225,16 @@ static std::vector<PHLMONITOR> overviewTargetMonitors(const std::string& target)
     return MONITOR ? std::vector<PHLMONITOR>{MONITOR} : std::vector<PHLMONITOR>{};
 }
 
+static SP<IOverview> dispatcherOverview() {
+    const auto CURRENTKEYBIND = g_pKeybindManager ? g_pKeybindManager->m_currentKeybind : SP<SKeybind>{};
+    if (CURRENTKEYBIND && CURRENTKEYBIND->key.starts_with("mouse") && g_pInputManager) {
+        if (const auto OVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()))
+            return OVERVIEW;
+    }
+
+    return activeScrollOverview();
+}
+
 static bool openOverview(PHLMONITOR monitor) {
     if (!monitor || scrollOverviewForMonitor(monitor))
         return true;
@@ -240,7 +252,7 @@ static bool openOverview(PHLMONITOR monitor) {
 
 static SDispatchResult onOverviewDispatcher(std::string arg) {
     const auto [ACTION, TARGET] = splitOverviewArg(arg);
-    const auto ACTIVE           = activeScrollOverview();
+    const auto ACTIVE           = dispatcherOverview();
 
     if (ACTIVE && ACTIVE->m_isSwiping)
         return {.success = false, .error = "already swiping"};
@@ -289,7 +301,7 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
 }
 
 static SDispatchResult onNavigateDispatcher(std::string arg) {
-    const auto OVERVIEW = scrollOverviewForMonitor(Desktop::focusState()->monitor());
+    const auto OVERVIEW = dispatcherOverview();
     if (!OVERVIEW)
         return {};
 
@@ -301,7 +313,7 @@ static SDispatchResult onNavigateDispatcher(std::string arg) {
 }
 
 static SDispatchResult onWindowDispatcher(std::string arg) {
-    const auto OVERVIEW = activeScrollOverview();
+    const auto OVERVIEW = dispatcherOverview();
     if (!OVERVIEW)
         return {};
 
