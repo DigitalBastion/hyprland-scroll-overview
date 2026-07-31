@@ -4749,6 +4749,7 @@ void CScrollOverview::close() {
         return;
     closeApplied = true;
 
+    const bool ACTIVATESELECTION = activeScrollOverview().get() == this;
     setClosing(true);
 
     const auto SELECTEDWORKSPACE =
@@ -4794,7 +4795,8 @@ void CScrollOverview::close() {
             if (FINALWORKSPACE != pMonitor->m_activeWorkspace)
                 pMonitor->changeWorkspace(FINALWORKSPACE, false, true, true);
 
-            Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
+            if (ACTIVATESELECTION)
+                Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
 
             startedOn                = FINALWORKSPACE;
             viewportCurrentWorkspace = targetIdx;
@@ -4846,7 +4848,8 @@ void CScrollOverview::close() {
         if (closeOnWindow->m_workspace != pMonitor->m_activeWorkspace)
             pMonitor->changeWorkspace(closeOnWindow->m_workspace, false, true, true);
 
-        Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
+        if (ACTIVATESELECTION)
+            Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
 
         const auto ACTIVEIDX = activeWorkspaceIndex();
         const auto FINALPITCH = getWorkspaceLogicalPitch(pMonitor.lock(), 1.F, layout);
