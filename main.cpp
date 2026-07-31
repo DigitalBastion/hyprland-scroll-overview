@@ -289,7 +289,7 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
 }
 
 static SDispatchResult onNavigateDispatcher(std::string arg) {
-    const auto OVERVIEW = activeScrollOverview();
+    const auto OVERVIEW = scrollOverviewForMonitor(Desktop::focusState()->monitor());
     if (!OVERVIEW)
         return {};
 
