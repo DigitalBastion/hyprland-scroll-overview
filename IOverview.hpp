@@ -31,6 +31,8 @@ class IOverview {
     virtual void  onSwipeEnd()                = 0;
 
     virtual void  close()                  = 0;
+    virtual bool  isClosing() const        = 0;
+    virtual void  reopen()                 = 0;
     virtual void  selectHoveredWorkspace() = 0;
     virtual bool  moveSelection(const std::string& direction) = 0;
     virtual bool  windowDispatcherAction(const std::string& action) = 0;
