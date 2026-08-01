@@ -138,7 +138,7 @@ static bool isOverviewSubmapActive() {
     return g_pKeybindManager && g_pKeybindManager->getCurrentSubmap().name == OVERVIEW_SUBMAP;
 }
 
-static bool hasMatchingModifiedScrollKeybind(const IPointer::SAxisEvent& event) {
+static bool hasMatchingScrollKeybind(const IPointer::SAxisEvent& event) {
     if (!g_pKeybindManager || !g_pInputManager || event.source != WL_POINTER_AXIS_SOURCE_WHEEL || event.delta == 0.0)
         return false;
 
@@ -151,9 +151,6 @@ static bool hasMatchingModifiedScrollKeybind(const IPointer::SAxisEvent& event) 
         return false;
 
     const auto MODS = g_pInputManager->getModsFromAllKBs();
-    if ((MODS & ~(HL_MODIFIER_CAPS | HL_MODIFIER_MOD2)) == 0)
-        return false;
-
     const auto SUBMAP = g_pKeybindManager->getCurrentSubmap();
     return std::ranges::any_of(g_pKeybindManager->m_keybinds, [&](const auto& keybind) {
         return keybind && keybind->enabled && !keybind->shadowed && keybind->key == key && (keybind->modmask == MODS || keybind->ignoreMods) &&
@@ -1393,7 +1390,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         if (closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
             return;
 
-        if (usesSubmapKeybinds && isOverviewSubmapActive() && hasMatchingModifiedScrollKeybind(e))
+        if (usesSubmapKeybinds && isOverviewSubmapActive() && hasMatchingScrollKeybind(e))
             return;
 
         info.cancelled = true;
