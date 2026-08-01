@@ -4910,6 +4910,23 @@ void CScrollOverview::close() {
     finishClose(FINALWORKSPACE, FINALWINDOW);
 }
 
+bool CScrollOverview::isClosing() const {
+    return closing;
+}
+
+void CScrollOverview::reopen() {
+    if (!closing)
+        return;
+
+    scale->setCallbackOnEnd({});
+    closeApplied = false;
+    setClosing(false);
+    activateSubmapIfConfigured();
+    emitFullscreenVisibilityState(Desktop::focusState()->window(), true);
+    *scale = ScrollOverview::Config::getScale();
+    damage();
+}
+
 void CScrollOverview::onPreRender() {
     if (pMonitor)
         pMonitor->m_solitaryClient.reset();
@@ -5140,9 +5157,11 @@ void CScrollOverview::setClosing(bool closing_) {
     if (closing) {
         transferSharedStateOwnership();
         inputFramePending = false;
+        if (scrollingPanPointerDown)
+            endScrollingPan();
+        releaseTopLayerPointerButtons(Time::millis(Time::steadyNow()));
         clearDragPending();
         restoreSubmapIfActive();
-        releaseInputListeners();
     } else
         applyWorkspaceAnimationOverrides();
 }

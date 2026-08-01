@@ -287,8 +287,12 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
     const bool ALL_OPEN = std::ranges::all_of(MONITORS, [](const auto& monitor) { return !!scrollOverviewForMonitor(monitor); });
     if (ACTION == "toggle" && ALL_OPEN) {
         for (const auto& monitor : MONITORS) {
-            if (const auto overview = scrollOverviewForMonitor(monitor))
-                overview->close();
+            if (const auto overview = scrollOverviewForMonitor(monitor)) {
+                if (overview->isClosing())
+                    overview->reopen();
+                else
+                    overview->close();
+            }
         }
         return {};
     }
