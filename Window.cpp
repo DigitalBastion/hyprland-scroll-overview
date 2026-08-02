@@ -343,7 +343,8 @@ static void blockOverviewWindowBlurOptimization(const PHLWINDOW& window, size_t 
     }
 }
 
-static void scaleOverviewSubsurfaceOffsets(const PHLWINDOW& window, const Vector2D& targetSize, size_t firstElement) {
+static void scaleOverviewChildSurfaceGeometry(const PHLWINDOW& window, const Vector2D& targetPosition, const Vector2D& targetSize,
+                                              size_t firstElement) {
     if (!window)
         return;
 
@@ -351,8 +352,8 @@ static void scaleOverviewSubsurfaceOffsets(const PHLWINDOW& window, const Vector
     if (REPORTEDSIZE.x <= 0 || REPORTEDSIZE.y <= 0)
         return;
 
-    const Vector2D SUBSURFACESCALE = targetSize / REPORTEDSIZE;
-    auto&          passElements    = g_pHyprRenderer->m_renderPass.m_passElements;
+    const Vector2D SURFACESCALE = targetSize / REPORTEDSIZE;
+    auto&          passElements = g_pHyprRenderer->m_renderPass.m_passElements;
 
     for (size_t i = firstElement; i < passElements.size(); ++i) {
         const auto& passElement = passElements[i];
@@ -360,15 +361,55 @@ static void scaleOverviewSubsurfaceOffsets(const PHLWINDOW& window, const Vector
             continue;
 
         auto* surfacePassElement = dc<CSurfacePassElement*>(passElement.element.get());
-        if (!surfacePassElement || surfacePassElement->m_data.pWindow != window || surfacePassElement->m_data.mainSurface || surfacePassElement->m_data.popup)
+        if (!surfacePassElement || surfacePassElement->m_data.pWindow != window || surfacePassElement->m_data.mainSurface)
             continue;
 
-        // Hyprland scales the subsurface texture during a resize, but its
-        // cumulative position remains in the client's reported coordinate
+        if (surfacePassElement->m_data.popup) {
+            // Popup positions are relative to the unscaled top-level window,
+            // while `pos` already contains the overview window position.
+            // Scale that relative part, including the popup's own subsurface
+            // offset, around the overview window origin.
+            surfacePassElement->m_data.pos = targetPosition + (surfacePassElement->m_data.pos - targetPosition) * SURFACESCALE;
+            surfacePassElement->m_data.localPos *= SURFACESCALE;
+
+            // Hyprland deliberately disables squishing for popups, which also
+            // disables its resize scaling. Re-enable it for this pass element,
+            // but expand the clamp dimensions to the complete scaled surface
+            // so the popup remains allowed to extend beyond the main window.
+            const auto SURFACESIZE =
+                surfacePassElement->m_data.surface->m_current.size.clamp({2.F, 2.F}, {INFINITY, INFINITY}) * SURFACESCALE;
+            surfacePassElement->m_data.w                = std::max(1.0, surfacePassElement->m_data.localPos.x + SURFACESIZE.x + 1.0);
+            surfacePassElement->m_data.h                = std::max(1.0, surfacePassElement->m_data.localPos.y + SURFACESIZE.y + 1.0);
+            surfacePassElement->m_data.squishOversized = true;
+            continue;
+        }
+
+        // Hyprland scales a regular subsurface texture during a resize, but
+        // its cumulative position remains in the client's reported coordinate
         // space. Apply the same scale to the position so embedded dmabuf
         // surfaces (OBS preview, OrcaSlicer viewport, etc.) stay attached.
-        surfacePassElement->m_data.localPos *= SUBSURFACESCALE;
+        surfacePassElement->m_data.localPos *= SURFACESCALE;
     }
+}
+
+static void raiseWindowPopups(const PHLWINDOW& window, size_t firstElement) {
+    if (!window)
+        return;
+
+    auto& passElements = g_pHyprRenderer->m_renderPass.m_passElements;
+    if (firstElement >= passElements.size())
+        return;
+
+    // renderWindow queues popups after the main surface, but overview adds its
+    // own decorations and border afterwards. Keep every non-popup element in
+    // its original order and move only this window's popup surfaces on top.
+    std::stable_partition(passElements.begin() + firstElement, passElements.end(), [&window](const auto& passElement) {
+        if (!passElement.element)
+            return true;
+
+        const auto* surfacePassElement = dc<const CSurfacePassElement*>(passElement.element.get());
+        return !surfacePassElement || surfacePassElement->m_data.pWindow != window || !surfacePassElement->m_data.popup;
+    });
 }
 
 static SOverviewWindowMetrics getOverviewWindowMetrics(PHLMONITOR monitor, const PHLWINDOW& window, float renderScale) {
@@ -963,7 +1004,8 @@ void renderOverviewWindow(const SRenderParams& params) {
     const size_t firstWindowPassElement = g_pHyprRenderer->m_renderPass.m_passElements.size();
     const bool   usePrecomputedBlur     = shouldUsePrecomputedBlur(params.window, params.monitor, params.workspaceBox, &params.windowBox, params.dragged);
     g_pHyprRenderer->renderWindow(params.window, params.monitor, params.now, false, Render::RENDER_PASS_ALL, false, false);
-    scaleOverviewSubsurfaceOffsets(params.window, params.window->sizeAnimation()->value(), firstWindowPassElement);
+    const Vector2D targetWindowPosition = params.monitor->m_position + params.windowBox.pos() / params.monitor->m_scale;
+    scaleOverviewChildSurfaceGeometry(params.window, targetWindowPosition, params.window->sizeAnimation()->value(), firstWindowPassElement);
     if (!usePrecomputedBlur)
         blockOverviewWindowBlurOptimization(params.window, firstWindowPassElement);
     roundStandaloneWindowPassElements(params.window, params.monitor, params.renderScale, firstWindowPassElement);
@@ -979,6 +1021,7 @@ void renderOverviewWindow(const SRenderParams& params) {
     if (!fullscreen)
         renderOverviewWindowBorder(params.monitor, params.window, params.windowBox, metrics, params.selected);
 
+    raiseWindowPopups(params.window, firstWindowPassElement);
     OverviewRender::flushPass(params.monitor);
 }
 
