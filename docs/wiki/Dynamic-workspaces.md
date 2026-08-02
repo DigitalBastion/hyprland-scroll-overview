@@ -1,5 +1,3 @@
-# Dynamic workspaces
-
 This configuration creates a new workspace when you reach the last populated workspace on a monitor and scroll down again. The custom `mouse_down` bind is enabled only in that situation; at other times it remains disabled, allowing ScrollOverview's built-in scrolling action to run normally.
 
 The example also ignores special and empty workspaces. Moving to `emptynm` lets Hyprland select the next empty workspace on the monitor.

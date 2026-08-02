@@ -1,5 +1,3 @@
-# Installation
-
 ## Using Hyprpm (recommended)
 
 1. For stable releases of Hyprland, add the plugin repository:

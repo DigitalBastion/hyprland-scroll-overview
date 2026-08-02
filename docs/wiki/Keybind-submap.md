@@ -1,5 +1,3 @@
-# Keybind submap
-
 Defining a `scrolloverview` submap replaces the built-in keyboard navigation in the overview and gives you full control over its keybinds. The submap is activated automatically when the overview opens, and closing the overview restores the default keymap. This makes more advanced interactions possible, such as closing the window under the mouse cursor with a click.
 
 While the submap is active, regular Hyprland keybinds defined outside it are not handled by default. Add `{ submap_universal = true }` to every standard bind that should remain available while the overview is open.

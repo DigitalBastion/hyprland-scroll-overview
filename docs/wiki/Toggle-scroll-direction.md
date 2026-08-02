@@ -1,5 +1,3 @@
-# Toggle scroll direction
-
 The `scrolling_mode` option can be changed at runtime. This example uses the normal, layout-aware mode by default and switches to the inverted mode while either Shift key is held. Releasing Shift restores the original scrolling behavior.
 
 Add the following state and helper functions to your Lua configuration:

@@ -1,5 +1,3 @@
-# ALT + Tab overview
-
 ScrollOverview can act as a visual `ALT + Tab` switcher. Pressing `ALT + Tab` opens a compact horizontal overview and uses the plugin's `navigate("right")` dispatcher to advance to the next column. Navigation stays on the monitor where the overview was opened and skips windows that are both pinned and floating.
 
 The dispatcher does not wrap at the end. The module therefore compares the active workspace and window before and after moving right. If neither changes, the selection is already at the last column on that monitor, so it navigates left until it reaches the first workspace and its first column.
