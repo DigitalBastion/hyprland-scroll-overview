@@ -227,10 +227,8 @@ static std::vector<PHLMONITOR> overviewTargetMonitors(const std::string& target)
 
 static SP<IOverview> dispatcherOverview() {
     const auto CURRENTKEYBIND = g_pKeybindManager ? g_pKeybindManager->m_currentKeybind : SP<SKeybind>{};
-    if (CURRENTKEYBIND && CURRENTKEYBIND->key.starts_with("mouse") && g_pInputManager) {
-        if (const auto OVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()))
-            return OVERVIEW;
-    }
+    if (CURRENTKEYBIND && CURRENTKEYBIND->key.starts_with("mouse"))
+        return g_pInputManager ? scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()) : SP<IOverview>{};
 
     return activeScrollOverview();
 }
@@ -252,16 +250,20 @@ static bool openOverview(PHLMONITOR monitor) {
 
 static SDispatchResult onOverviewDispatcher(std::string arg) {
     const auto [ACTION, TARGET] = splitOverviewArg(arg);
-    const auto ACTIVE           = dispatcherOverview();
+
+    if (ACTION == "select") {
+        const auto OVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
+        if (OVERVIEW && OVERVIEW->m_isSwiping)
+            return {.success = false, .error = "already swiping"};
+        if (OVERVIEW)
+            OVERVIEW->selectHoveredWorkspace();
+        return {};
+    }
+
+    const auto ACTIVE = dispatcherOverview();
 
     if (ACTIVE && ACTIVE->m_isSwiping)
         return {.success = false, .error = "already swiping"};
-
-    if (ACTION == "select") {
-        if (ACTIVE)
-            ACTIVE->selectHoveredWorkspace();
-        return {};
-    }
 
     if (ACTION == "off" || ACTION == "close" || ACTION == "disable") {
         if (TARGET.empty() || TARGET == "all") {
@@ -306,6 +308,7 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
 
 static SDispatchResult onNavigateDispatcher(std::string arg) {
     const auto OVERVIEW = dispatcherOverview();
+
     if (!OVERVIEW)
         return {};
 
@@ -317,7 +320,7 @@ static SDispatchResult onNavigateDispatcher(std::string arg) {
 }
 
 static SDispatchResult onWindowDispatcher(std::string arg) {
-    const auto OVERVIEW = dispatcherOverview();
+    const auto OVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
     if (!OVERVIEW)
         return {};
 

@@ -51,7 +51,7 @@ plugin {
 }
 
 # Toggle ScrollOverview with SUPER+g
-bind = SUPER, g, scrolloverview:overview, toggle all
+bind = SUPER, g, scrolloverview:overview, "toggle all"
 ```
 
 ### Lua

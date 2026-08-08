@@ -59,7 +59,7 @@ Moves the overview selection/focus between windows in the current workspace. If 
 
 ### `hl.plugin.scrolloverview.window`
 
-Acts on an overview window. Mouse binds use the window under the cursor; keyboard binds use the currently selected window.
+Acts on the window under the mouse cursor.
 
 | option | description |
 | --- | --- |

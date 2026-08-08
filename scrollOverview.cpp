@@ -138,7 +138,7 @@ static bool isOverviewSubmapActive() {
     return g_pKeybindManager && g_pKeybindManager->getCurrentSubmap().name == OVERVIEW_SUBMAP;
 }
 
-static bool hasMatchingScrollKeybind(const IPointer::SAxisEvent& event) {
+static bool hasApplicableScrollKeybind(const IPointer::SAxisEvent& event) {
     if (!g_pKeybindManager || !g_pInputManager || event.source != WL_POINTER_AXIS_SOURCE_WHEEL || event.delta == 0.0)
         return false;
 
@@ -150,12 +150,19 @@ static bool hasMatchingScrollKeybind(const IPointer::SAxisEvent& event) {
     else
         return false;
 
-    const auto MODS = g_pInputManager->getModsFromAllKBs();
+    const auto MODS   = g_pInputManager->getModsFromAllKBs();
     const auto SUBMAP = g_pKeybindManager->getCurrentSubmap();
     return std::ranges::any_of(g_pKeybindManager->m_keybinds, [&](const auto& keybind) {
         return keybind && keybind->enabled && !keybind->shadowed && keybind->key == key && (keybind->modmask == MODS || keybind->ignoreMods) &&
             (keybind->submap.name == SUBMAP.name || keybind->submapUniversal);
     });
+}
+
+static bool scrollKeybindIsThrottled() {
+    if (!g_pKeybindManager)
+        return false;
+
+    return g_pKeybindManager->m_scrollTimer.getMillis() < ScrollOverview::Config::getValue<int>("binds:scroll_event_delay");
 }
 
 static bool isTopLayerFocused(PHLMONITOR monitor) {
@@ -1387,11 +1394,14 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
     };
 
     auto onMouseAxis = [this](IPointer::SAxisEvent e, Event::SCallbackInfo& info) {
-        if (closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
+        if (info.cancelled || closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
             return;
 
-        if (usesSubmapKeybinds && isOverviewSubmapActive() && hasMatchingScrollKeybind(e))
+        if (usesSubmapKeybinds && isOverviewSubmapActive() && hasApplicableScrollKeybind(e)) {
+            if (scrollKeybindIsThrottled())
+                info.cancelled = true;
             return;
+        }
 
         info.cancelled = true;
 
@@ -2417,17 +2427,10 @@ void CScrollOverview::selectHoveredWorkspace() {
 }
 
 bool CScrollOverview::windowDispatcherAction(const std::string& action) {
-    const auto CURRENTKEYBIND = g_pKeybindManager ? g_pKeybindManager->m_currentKeybind : SP<SKeybind>{};
-    const bool FROMMOUSEBIND  = CURRENTKEYBIND && CURRENTKEYBIND->key.starts_with("mouse:");
+    lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
-    PHLWINDOW WINDOW;
     size_t    workspaceIdx = viewportCurrentWorkspace;
-
-    if (FROMMOUSEBIND) {
-        lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
-        WINDOW            = windowAtOverviewCursor(&workspaceIdx);
-    } else
-        WINDOW = getOverviewWindowToShow(closeOnWindow.lock());
+    PHLWINDOW WINDOW       = windowAtOverviewCursor(&workspaceIdx);
 
     if (!WINDOW)
         return false;
