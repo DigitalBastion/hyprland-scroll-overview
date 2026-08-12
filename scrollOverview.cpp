@@ -7,7 +7,9 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <unordered_set>
 #include <linux/input-event-codes.h>
+#include <state/MonitorState.hpp>
 #include <state/WorkspaceState.hpp>
 #define private public
 #define protected public
@@ -67,7 +69,40 @@
 
 static PHLWINDOW getOverviewFullscreenVisibilityWindow(const PHLWORKSPACE& workspace, const PHLWINDOW& fallback = {});
 static constexpr const char* OVERVIEW_SUBMAP = "scrolloverview";
-static CScrollOverview*      g_pointerGrabOverview = nullptr;
+static constexpr auto        POST_DROP_PSEUDO_FOCUS_DURATION = std::chrono::milliseconds(100);
+static CScrollOverview*             g_pointerGrabOverview = nullptr;
+static std::unordered_set<uint32_t> g_topLayerPointerButtons;
+static PHLWINDOWREF                 g_pseudoFocusedWindow;
+static Time::steady_tp              g_pseudoFocusUntil = {};
+
+static void restoreActiveWorkspaceVisibility() {
+    for (const auto& monitor : State::monitorState()->monitors()) {
+        if (!monitor)
+            continue;
+
+        for (const auto& workspace : {monitor->m_activeWorkspace, monitor->m_activeSpecialWorkspace}) {
+            if (!workspace)
+                continue;
+
+            workspace->m_visible = true;
+            workspace->m_alpha->setValueAndWarp(1.F);
+            workspace->m_renderOffset->setValueAndWarp(Vector2D{});
+        }
+
+        g_pHyprRenderer->damageMonitor(monitor);
+    }
+}
+
+static void releaseTopLayerPointerButtons(uint32_t timeMs) {
+    if (g_topLayerPointerButtons.empty())
+        return;
+
+    for (const auto button : g_topLayerPointerButtons)
+        g_pSeatManager->sendPointerButton(timeMs, button, WL_POINTER_BUTTON_STATE_RELEASED);
+
+    g_topLayerPointerButtons.clear();
+    g_pSeatManager->sendPointerFrame();
+}
 
 static void removeOverview(CScrollOverview* overview) {
     const auto PMONITOR = overview ? overview->pMonitor.lock() : PHLMONITOR{};
@@ -101,6 +136,33 @@ static bool hasOverviewSubmap() {
 
 static bool isOverviewSubmapActive() {
     return g_pKeybindManager && g_pKeybindManager->getCurrentSubmap().name == OVERVIEW_SUBMAP;
+}
+
+static bool hasApplicableScrollKeybind(const IPointer::SAxisEvent& event) {
+    if (!g_pKeybindManager || !g_pInputManager || event.source != WL_POINTER_AXIS_SOURCE_WHEEL || event.delta == 0.0)
+        return false;
+
+    std::string key;
+    if (event.axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
+        key = event.delta > 0 ? "mouse_down" : "mouse_up";
+    else if (event.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL)
+        key = event.delta < 0 ? "mouse_left" : "mouse_right";
+    else
+        return false;
+
+    const auto MODS   = g_pInputManager->getModsFromAllKBs();
+    const auto SUBMAP = g_pKeybindManager->getCurrentSubmap();
+    return std::ranges::any_of(g_pKeybindManager->m_keybinds, [&](const auto& keybind) {
+        return keybind && keybind->enabled && !keybind->shadowed && keybind->key == key && (keybind->modmask == MODS || keybind->ignoreMods) &&
+            (keybind->submap.name == SUBMAP.name || keybind->submapUniversal);
+    });
+}
+
+static bool scrollKeybindIsThrottled() {
+    if (!g_pKeybindManager)
+        return false;
+
+    return g_pKeybindManager->m_scrollTimer.getMillis() < ScrollOverview::Config::getValue<int>("binds:scroll_event_delay");
 }
 
 static bool isTopLayerFocused(PHLMONITOR monitor) {
@@ -719,6 +781,16 @@ static bool isWorkspaceScrolling(const PHLWORKSPACE& workspace) {
     return overviewScrollingAlgorithmForWorkspace(workspace) != nullptr;
 }
 
+static Vector2D overviewScrollingCameraTranslation(Layout::Tiled::CScrollingAlgorithm* algorithm) {
+    if (!algorithm || !algorithm->m_scrollingData || !algorithm->m_scrollingData->controller)
+        return {};
+
+    const auto& CONTROLLER = algorithm->m_scrollingData->controller;
+    const auto TRANSLATION = CONTROLLER->isReversed() ? CONTROLLER->getOffset() : -CONTROLLER->getOffset();
+
+    return CONTROLLER->isPrimaryHorizontal() ? Vector2D{TRANSLATION, 0.F} : Vector2D{0.F, TRANSLATION};
+}
+
 static CBox getOverviewWorkspaceUsableBox(const PHLWORKSPACE& workspace, PHLMONITOR monitor, float scale, const Vector2D& viewOffset, float offset,
                                           ScrollOverview::Config::ELayout layout) {
     if (!workspace || !monitor)
@@ -905,8 +977,10 @@ CScrollOverview::~CScrollOverview() {
     restoreForcedWindowVisibility();
     restoreForcedLayerVisibility();
     images.clear(); // otherwise we get a vram leak
-    if (scrollOverviews().empty())
+    if (scrollOverviews().empty()) {
+        restoreActiveWorkspaceVisibility();
         Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
+    }
     if (const auto MONITOR = pMonitor.lock())
         MONITOR->m_blurFBDirty = true;
 }
@@ -970,11 +1044,6 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
 
     auto onMouseMove = [this](Vector2D, Event::SCallbackInfo& info) {
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
-        if (INPUTOVERVIEW) {
-            const auto INPUTMONITOR = INPUTOVERVIEW->pMonitor.lock();
-            if (INPUTMONITOR && INPUTMONITOR != Desktop::focusState()->monitor())
-                Desktop::focusState()->rawMonitorFocus(INPUTMONITOR);
-        }
 
         if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) || (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this))
             return;
@@ -1077,8 +1146,14 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
     };
 
     auto onMouseButton = [this](IPointer::SButtonEvent event, Event::SCallbackInfo& info) {
+        if (info.cancelled)
+            return;
+
+        const bool FORWARDEDTOPLAYERRELEASE =
+            event.state == WL_POINTER_BUTTON_STATE_RELEASED && g_topLayerPointerButtons.contains(event.button);
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
-        if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) || (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this))
+        if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) ||
+            (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this && !FORWARDEDTOPLAYERRELEASE))
             return;
 
         const bool RELEASESPOINTERGRAB = event.state == WL_POINTER_BUTTON_STATE_RELEASED;
@@ -1087,7 +1162,26 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
                 g_pointerGrabOverview = nullptr;
         });
 
-        if (!dragPendingPrimary && !resizePointerDown && !scrollingPanPointerDown && !dragActiveWindow && !resizeActiveWindow && isPointerOnTopLayer(pMonitor.lock())) {
+        const bool POINTERONTOPLAYER =
+            !dragPendingPrimary && !resizePointerDown && !scrollingPanPointerDown && !dragActiveWindow && !resizeActiveWindow && isPointerOnTopLayer(pMonitor.lock());
+
+        if (FORWARDEDTOPLAYERRELEASE ||
+            (event.state == WL_POINTER_BUTTON_STATE_PRESSED && POINTERONTOPLAYER && usesSubmapKeybinds && isOverviewSubmapActive())) {
+            submapMouseClickPending = false;
+            submapMouseClickButton  = 0;
+
+            info.cancelled = true;
+            if (event.state == WL_POINTER_BUTTON_STATE_PRESSED)
+                g_topLayerPointerButtons.emplace(event.button);
+            else
+                g_topLayerPointerButtons.erase(event.button);
+
+            g_pSeatManager->sendPointerButton(event.timeMs, event.button, event.state);
+            g_pSeatManager->sendPointerFrame();
+            return;
+        }
+
+        if (POINTERONTOPLAYER) {
             submapMouseClickPending = false;
             submapMouseClickButton  = 0;
             return;
@@ -1104,6 +1198,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         // events
         // before they reach Hyprland's input manager, leaving it stuck thinking
         // buttons are still pressed, which locks focus.
+        releaseTopLayerPointerButtons(event.timeMs);
         g_pInputManager->releaseAllMouseButtons();
 
         const bool     LEFT_HANDED        = ScrollOverview::Config::getLeftHanded();
@@ -1139,7 +1234,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
 
             selectHoveredWorkspace();
             selectWindowAtOverviewCursor(true);
-            close();
+            closeAll();
         };
         const auto     finishWindowDragOrClick = [&](uint32_t button, bool allowClick) {
             const float CLICK_MAX_DRAG_DISTANCE = 10.F * (pMonitor ? pMonitor->m_scale : 1.F);
@@ -1302,18 +1397,20 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
 
         info.cancelled = true;
 
-        selectWindowAtOverviewCursor();
+        selectWindowAtOverviewCursor(true);
 
-        close();
+        closeAll();
     };
 
     auto onMouseAxis = [this](IPointer::SAxisEvent e, Event::SCallbackInfo& info) {
-        if (closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
+        if (info.cancelled || closing || scrollOverviewAt(g_pInputManager->getMouseCoordsInternal()).get() != this)
             return;
 
-        // Let universal Super-wheel bindings work while the overview submap is active.
-        if (g_pInputManager->getModsFromAllKBs() & HL_MODIFIER_META)
+        if (usesSubmapKeybinds && isOverviewSubmapActive() && hasApplicableScrollKeybind(e)) {
+            if (scrollKeybindIsThrottled())
+                info.cancelled = true;
             return;
+        }
 
         info.cancelled = true;
 
@@ -1454,7 +1551,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
                 moveSelection("down");
                 break;
             case XKB_KEY_Return:
-            case XKB_KEY_KP_Enter: close(); break;
+            case XKB_KEY_KP_Enter: closeAll(); break;
             default: return;
         }
 
@@ -2300,8 +2397,11 @@ bool CScrollOverview::selectOverviewWindow(PHLWINDOW window, size_t workspaceIdx
     closeOnWindow            = window;
     viewportCurrentWorkspace = workspaceIdx;
     rememberSelection(window);
-    if (syncFocus)
+    if (syncFocus) {
+        if (const auto MONITOR = pMonitor.lock(); MONITOR && Desktop::focusState()->monitor() != MONITOR)
+            Desktop::focusState()->rawMonitorFocus(MONITOR);
         syncFocusedSelection();
+    }
     damage();
     return true;
 }
@@ -2336,17 +2436,10 @@ void CScrollOverview::selectHoveredWorkspace() {
 }
 
 bool CScrollOverview::windowDispatcherAction(const std::string& action) {
-    const auto CURRENTKEYBIND = g_pKeybindManager ? g_pKeybindManager->m_currentKeybind : SP<SKeybind>{};
-    const bool FROMMOUSEBIND  = CURRENTKEYBIND && CURRENTKEYBIND->key.starts_with("mouse:");
+    lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
-    PHLWINDOW WINDOW;
     size_t    workspaceIdx = viewportCurrentWorkspace;
-
-    if (FROMMOUSEBIND) {
-        lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
-        WINDOW            = windowAtOverviewCursor(&workspaceIdx);
-    } else
-        WINDOW = getOverviewWindowToShow(closeOnWindow.lock());
+    PHLWINDOW WINDOW       = windowAtOverviewCursor(&workspaceIdx);
 
     if (!WINDOW)
         return false;
@@ -2450,7 +2543,7 @@ void CScrollOverview::refreshDragOriginalOverviewBoxes() {
 
     Vector2D tapeDelta;
     if (const auto ALGO = overviewScrollingAlgorithmForWorkspace(WORKSPACE); ALGO && ALGO->m_scrollingData && ALGO->m_scrollingData->controller)
-        tapeDelta = ALGO->m_scrollingData->controller->getCameraTranslation(ALGO->usableArea()) - dragOriginalTapeTranslation;
+        tapeDelta = overviewScrollingCameraTranslation(ALGO) - dragOriginalTapeTranslation;
 
     auto visualBox = dragOriginalVisualBox;
     auto hitbox    = dragOriginalBox;
@@ -2498,6 +2591,9 @@ void CScrollOverview::beginWindowDrag(PHLWINDOW window) {
     if (!shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
         return;
 
+    g_pseudoFocusedWindow.reset();
+    g_pseudoFocusUntil = {};
+
     closeOnWindow = WINDOW;
     rememberSelection(WINDOW);
 
@@ -2531,7 +2627,7 @@ void CScrollOverview::beginWindowDrag(PHLWINDOW window) {
             WINDOWBOX.height > 0.0 ? dragGrabOffsetLocal.y / WINDOWBOX.height : 0.5,
         };
         if (const auto ALGO = overviewScrollingAlgorithmForWorkspace(WINDOW->m_workspace); ALGO && ALGO->m_scrollingData && ALGO->m_scrollingData->controller)
-            dragOriginalTapeTranslation = ALGO->m_scrollingData->controller->getCameraTranslation(ALGO->usableArea());
+            dragOriginalTapeTranslation = overviewScrollingCameraTranslation(ALGO);
         refreshDragOriginalOverviewBoxes();
     } else {
         dragGrabOffsetLocal = Vector2D{};
@@ -3078,6 +3174,12 @@ void CScrollOverview::endWindowDrag() {
             dropOverview->emitFullscreenVisibilityState(FULLSCREENWINDOW, true);
     }
 
+    if (WINDOW && DROPMONITOR && DROPWORKSPACE == DROPMONITOR->m_activeWorkspace) {
+        dropOverview->selectOverviewWindow(WINDOW, dropWorkspaceIdx, true);
+        g_pseudoFocusedWindow = WINDOW;
+        g_pseudoFocusUntil    = Time::steadyNow() + POST_DROP_PSEUDO_FOCUS_DURATION;
+    }
+
     clearDragPending();
     rebuildPending = true;
     damage();
@@ -3334,6 +3436,8 @@ void CScrollOverview::syncSelectionToViewport() {
     }
 
     closeOnWindow.reset();
+    if (activeScrollOverview().get() == this)
+        Desktop::focusState()->fullWindowFocus(nullptr, Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
 }
 
 void CScrollOverview::syncFocusedSelection() {
@@ -4087,6 +4191,21 @@ void CScrollOverview::renderWindowLive(PHLMONITOR monitor, PHLWINDOW window, con
     if (!window)
         return;
 
+    auto* const DRAGOWNER = g_pointerGrabOverview && g_pointerGrabOverview->dragActiveWindow ? g_pointerGrabOverview : this;
+    const auto  DRAGGED   = getOverviewWindowToShow(DRAGOWNER->dragActiveWindow.lock());
+    auto        PSEUDOFOCUSED = PHLWINDOW{};
+    if (now < g_pseudoFocusUntil)
+        PSEUDOFOCUSED = getOverviewWindowToShow(g_pseudoFocusedWindow.lock());
+    else {
+        g_pseudoFocusedWindow.reset();
+        g_pseudoFocusUntil = {};
+    }
+
+    if (!shouldShowOverviewWindow(PSEUDOFOCUSED))
+        PSEUDOFOCUSED.reset();
+
+    const auto PSEUDOFOCUSWINDOW = DRAGGED ? DRAGGED : PSEUDOFOCUSED;
+
     forceWindowVisible(window);
     forceWindowSurfaceVisibility(window);
 
@@ -4099,6 +4218,7 @@ void CScrollOverview::renderWindowLive(PHLMONITOR monitor, PHLWINDOW window, con
         .workspaceBox         = workspaceBox,
         .selected             = closeOnWindow == window,
         .dragged              = dragged,
+        .pseudoFocusWindow    = PSEUDOFOCUSWINDOW,
     });
 }
 
@@ -4674,6 +4794,7 @@ void CScrollOverview::close() {
         return;
     closeApplied = true;
 
+    const bool ACTIVATESELECTION = activeScrollOverview().get() == this;
     setClosing(true);
 
     const auto SELECTEDWORKSPACE =
@@ -4719,7 +4840,8 @@ void CScrollOverview::close() {
             if (FINALWORKSPACE != pMonitor->m_activeWorkspace)
                 pMonitor->changeWorkspace(FINALWORKSPACE, false, true, true);
 
-            Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
+            if (ACTIVATESELECTION)
+                Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
 
             startedOn                = FINALWORKSPACE;
             viewportCurrentWorkspace = targetIdx;
@@ -4771,7 +4893,8 @@ void CScrollOverview::close() {
         if (closeOnWindow->m_workspace != pMonitor->m_activeWorkspace)
             pMonitor->changeWorkspace(closeOnWindow->m_workspace, false, true, true);
 
-        Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
+        if (ACTIVATESELECTION)
+            Desktop::focusState()->fullWindowFocus(closeOnWindow.lock(), Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE);
 
         const auto ACTIVEIDX = activeWorkspaceIndex();
         const auto FINALPITCH = getWorkspaceLogicalPitch(pMonitor.lock(), 1.F, layout);
@@ -4797,6 +4920,23 @@ void CScrollOverview::close() {
     const auto FINALWINDOW    = getOverviewWindowToShow(closeOnWindow.lock());
     const auto FINALWORKSPACE = FINALWINDOW ? FINALWINDOW->m_workspace : SELECTEDWORKSPACE;
     finishClose(FINALWORKSPACE, FINALWINDOW);
+}
+
+bool CScrollOverview::isClosing() const {
+    return closing;
+}
+
+void CScrollOverview::reopen() {
+    if (!closing)
+        return;
+
+    scale->setCallbackOnEnd({});
+    closeApplied = false;
+    setClosing(false);
+    activateSubmapIfConfigured();
+    emitFullscreenVisibilityState(Desktop::focusState()->window(), true);
+    *scale = ScrollOverview::Config::getScale();
+    damage();
 }
 
 void CScrollOverview::onPreRender() {
@@ -5029,9 +5169,11 @@ void CScrollOverview::setClosing(bool closing_) {
     if (closing) {
         transferSharedStateOwnership();
         inputFramePending = false;
+        if (scrollingPanPointerDown)
+            endScrollingPan();
+        releaseTopLayerPointerButtons(Time::millis(Time::steadyNow()));
         clearDragPending();
         restoreSubmapIfActive();
-        releaseInputListeners();
     } else
         applyWorkspaceAnimationOverrides();
 }
@@ -5039,6 +5181,7 @@ void CScrollOverview::setClosing(bool closing_) {
 void CScrollOverview::releaseInputListeners() {
     if (scrollingPanPointerDown)
         endScrollingPan();
+    releaseTopLayerPointerButtons(Time::millis(Time::steadyNow()));
     clearDragPending();
     submapMouseClickPending = false;
     submapMouseClickButton  = 0;

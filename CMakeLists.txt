@@ -23,17 +23,17 @@ add_dependencies(scrolloverview scrolloverview-version)
 target_include_directories(scrolloverview PRIVATE "${VERSION_HEADER_DIR}")
 
 find_package(PkgConfig REQUIRED)
+pkg_search_module(lua REQUIRED IMPORTED_TARGET "lua5.4>=5.4" "lua>=5.4")
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     hyprland
     libdrm
     libinput
     libudev
-    lua5.4
     pangocairo
     pixman-1
     wayland-server
     xkbcommon
 )
-target_link_libraries(scrolloverview PRIVATE rt PkgConfig::deps)
+target_link_libraries(scrolloverview PRIVATE rt PkgConfig::deps PkgConfig::lua)
 
 install(TARGETS scrolloverview)

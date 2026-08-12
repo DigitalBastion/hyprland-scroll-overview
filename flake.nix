@@ -26,24 +26,18 @@
                 system,
                 ...
             }: let
-                hl = hyprland.packages.${system}.hyprland;
+                hyprlandPackage = hyprland.packages.${system}.hyprland;
             in {
-                packages.scrolloverview = pkgs.stdenv.mkDerivation {
-                    pname = "hyprland-scroll-overview";
+                packages.scrolloverview = pkgs.hyprlandPlugins.mkHyprlandPlugin {
+                    hyprland = hyprlandPackage;
+                    pluginName = "scrolloverview";
                     version = self.shortRev or self.dirtyShortRev or "unknown";
                     src = ./.;
 
-                    inherit (hl) buildInputs;
-                    nativeBuildInputs =
-                        hl.nativeBuildInputs
-                        ++ [
-                            hl
-                            pkgs.gcc14
-                            pkgs.pkg-config
-                            pkgs.lua5_4
-                        ];
+                    buildInputs = [pkgs.lua5_4];
 
                     enableParallelBuilding = true;
+                    dontUseCmakeConfigure = true;
 
                     buildPhase = ''
                         runHook preBuild
@@ -55,9 +49,16 @@
                     installPhase = ''
                         runHook preInstall
                         mkdir -p "$out/lib"
-                        cp libscrolloverview.so "$out/lib/libscrolloverview.so"
+                        mv scrolloverview.so "$out/lib/libscrolloverview.so"
                         runHook postInstall
                     '';
+
+                    meta = {
+                        description = "Scrollable workspace overview plugin for Hyprland";
+                        homepage = "https://github.com/yayuuu/hyprland-scroll-overview";
+                        license = pkgs.lib.licenses.bsd3;
+                        platforms = pkgs.lib.platforms.linux;
+                    };
                 };
 
                 packages.default = config.packages.scrolloverview;
