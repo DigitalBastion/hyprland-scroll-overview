@@ -47,11 +47,11 @@ int main() {
     require(OverviewWindow::titleBannerHeight(200.F, scale, padding, 6.F) == 12.F,
             "small text must retain the default scaled banner height");
     // Use remaining space without shrinking or clipping text when padding cannot all fit.
-    require(OverviewWindow::titleBannerHeight(textHeight + padding * 2.F + 1.F, scale, padding, textHeight) == textHeight + 1.F,
-            "banner must clamp to available preview space");
-    require(OverviewWindow::titleBannerHeight(textHeight + padding * 2.F, scale, padding, textHeight) == textHeight,
-            "an exact text fit must remain visible");
-    require(OverviewWindow::titleBannerHeight(textHeight + padding * 2.F - 1.F, scale, padding, textHeight) == 0.F,
+    require(OverviewWindow::titleBannerHeight(textHeight + 1.F, scale, padding, textHeight) == textHeight + 1.F,
+            "attached banner must use the full preview height without exterior padding");
+    require(OverviewWindow::titleBannerHeight(textHeight, scale, padding, textHeight) == textHeight,
+            "an exact text fit must remain visible without exterior padding");
+    require(OverviewWindow::titleBannerHeight(textHeight - 1.F, scale, padding, textHeight) == 0.F,
             "text taller than available preview space must be omitted");
     require(OverviewWindow::titleBannerHeight(1.F, scale, padding, textHeight) == 0.F,
             "tiny previews must omit titles");
@@ -60,7 +60,26 @@ int main() {
         const int measured = measureTitleHeight(std::lround(24.F * pixelScale));
         const float banner = OverviewWindow::titleBannerHeight(400.F, pixelScale, inset, measured);
         require(banner >= measured + inset * 2.F, "larger preview/monitor scales must also fit requested text");
-        require(banner <= 400.F - inset * 2.F, "banner must remain within preview bounds");
+        require(banner <= 400.F, "banner must remain within preview bounds");
+    }
+    for (const float pixelScale : {0.375F, 0.5F, 0.7875F, 1.25F, 2.F}) {
+        const float innerPadding = std::round(6.F * pixelScale);
+        const int measured = measureTitleHeight(std::lround(24.F * pixelScale));
+        for (const auto origin : {Hyprutils::Math::Vector2D{0,0}, Hyprutils::Math::Vector2D{-140.25,37.75}}) {
+            const Hyprutils::Math::CBox preview{origin, {350.5, 200.25}};
+            const auto banner = OverviewWindow::titleBannerBox(preview, pixelScale, innerPadding, measured);
+            require(banner.x == preview.x && banner.y == preview.y && banner.width == preview.width,
+                    "background must attach to the preview top and full width at every origin/scale");
+            require(banner.height >= measured + 2.F * innerPadding && banner.height <= preview.height,
+                    "attached header must contain measured text and internal padding");
+            const auto exact = OverviewWindow::titleBannerBox({origin,{350.5, double(measured)}}, pixelScale, innerPadding, measured);
+            require(exact.height == measured && exact.y == origin.y,
+                    "exact text fit must not reserve exterior height");
+            require(OverviewWindow::titleBannerBox({origin,{350.5, double(measured-1)}}, pixelScale, innerPadding, measured).empty(),
+                    "too-short previews must omit the header");
+            require(OverviewWindow::titleBannerBox({origin,{double(2.F*innerPadding),200.25}}, pixelScale, innerPadding, measured).empty(),
+                    "too-narrow previews must omit the header rather than lose internal text padding");
+        }
     }
     std::cout << "Overview title geometry: passed\n";
 }

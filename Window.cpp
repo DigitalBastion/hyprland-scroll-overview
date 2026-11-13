@@ -643,6 +643,17 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(data));
 }
 
+// Draw the preview's rounded top corners with a square header bottom. The
+// native rect is clipped to the header strip; conservative occlusion avoids
+// the native logical-bounds/pixel-clip mismatch at non-unit monitor scales.
+class COverviewTitleBackgroundPassElement : public CRectPassElement {
+  public:
+    using CRectPassElement::CRectPassElement;
+    CRegion opaqueRegion() override {
+        return {};
+    }
+};
+
 static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics) {
     if (!window || !ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled", monitor))
         return;
@@ -653,9 +664,8 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
 
     const float scale       = std::max(0.1F, metrics.pxScale);
     const float padding     = std::round(6.F * scale);
-    CBox        titleBox    = {windowBox.x + padding, windowBox.y + padding, windowBox.width - padding * 2.F, windowBox.height - padding * 2.F};
-    const int   maxWidth    = sc<int>(std::floor(titleBox.width - padding * 2.F));
-    if (titleBox.width <= 0.F || titleBox.height <= 0.F || maxWidth < 1)
+    const int   maxWidth    = sc<int>(std::floor(windowBox.width - padding * 2.F));
+    if (windowBox.empty() || maxWidth < 1)
         return;
 
     CHyprColor textColor = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:text_color", monitor)));
@@ -666,17 +676,19 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     if (!texture || !texture->ok())
         return;
 
-    titleBox.height = titleBannerHeight(windowBox.height, scale, padding, texture->m_size.y);
-    if (titleBox.height <= 0.F)
+    const auto titleBox = titleBannerBox(windowBox, scale, padding, texture->m_size.y);
+    if (titleBox.empty())
         return;
 
     CHyprColor background = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:background_color", monitor)));
     background.a *= metrics.targetOpacity;
-    g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{
-        .box           = titleBox,
+    const bool FULLSCREEN = Fullscreen::controller()->isFullscreen(window);
+    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewTitleBackgroundPassElement>(CRectPassElement::SRectData{
+        .box           = windowBox,
         .color         = background,
-        .round         = std::max(0, sc<int>(std::round(4.F * scale))),
-        .roundingPower = 2.F,
+        .round         = FULLSCREEN ? 0 : metrics.roundingPx,
+        .roundingPower = metrics.roundingPower,
+        .clipBox       = titleBox,
     }));
 
     CBox textBox = titleBox;

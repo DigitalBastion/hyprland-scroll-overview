@@ -6,13 +6,14 @@ using the existing build directory and installed Pango development dependencies:
 
 ```sh
 g++ -std=c++23 -Wall -Wextra -Werror tests/overview-title.cpp \
-    -o .build/overview-title-test $(pkg-config --cflags --libs pangocairo)
+    -o .build/overview-title-test $(pkg-config --cflags --libs pangocairo hyprutils)
 ./.build/overview-title-test
 ```
 
 The regression covers the disappearing `font_size = 24` label at preview scale
-`0.5`, default minimum height, preview bounds, exact fits, tiny previews, and
-larger preview/monitor scales. It does not validate compositor texture upload or
+`0.5`, default minimum height, flush full-width/top background geometry,
+internal padding, exact fits without exterior height reservation, tiny previews,
+fractional scales and nonzero origins. It does not validate compositor texture upload or
 render-pass output.
 
 ## Reservation-only workspace backing
