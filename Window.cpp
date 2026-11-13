@@ -113,12 +113,11 @@ static bool shouldShowOverviewWindow(const PHLWINDOW& window) {
     return true;
 }
 
-static float getOverviewWindowTargetOpacity(const PHLWINDOW& window) {
+static float getOverviewWindowTargetOpacity(const PHLWINDOW& window, bool active) {
     if (!window)
         return 1.F;
 
     const bool  fullscreen     = Fullscreen::controller()->isFullscreen(window);
-    const bool  active         = Desktop::focusState()->window() == window;
     float       targetOpacity  = fullscreen ? ScrollOverview::Config::getValue<float>("decoration:fullscreen_opacity") :
         active ? ScrollOverview::Config::getValue<float>("decoration:active_opacity") : ScrollOverview::Config::getValue<float>("decoration:inactive_opacity");
     const auto& ruleOpacityVar = fullscreen ? window->m_ruleApplicator->alphaFullscreen() : active ? window->m_ruleApplicator->alpha() : window->m_ruleApplicator->alphaInactive();
@@ -128,11 +127,10 @@ static float getOverviewWindowTargetOpacity(const PHLWINDOW& window) {
     return std::clamp(targetOpacity, 0.F, 1.F);
 }
 
-struct SOverviewPseudoFocusState {
+// Apply native active/inactive styling only to the synchronous preview render.
+// Selection is visual state, not compositor/seat focus (including during drag).
+struct SOverviewSelectionRenderState {
     PHLWINDOW                     window;
-    SP<Desktop::CFocusState>       focusState;
-    PHLWINDOWREF                  previousFocusWindow;
-    WP<CWLSurfaceResource>         previousFocusSurface;
     Config::CGradientValueData     previousBorderColor;
     Config::CGradientValueData     previousBorderColorPrevious;
     Config::CGradientValueData     previousShadowColor;
@@ -143,14 +141,11 @@ struct SOverviewPseudoFocusState {
     float                          previousDim     = 0.F;
     bool                           active          = false;
 
-    SOverviewPseudoFocusState(const PHLWINDOW& window_, const PHLWINDOW& pseudoFocusWindow) : window(window_) {
-        if (!window || !pseudoFocusWindow)
+    SOverviewSelectionRenderState(const PHLWINDOW& window_, bool selected) : window(window_) {
+        if (!window)
             return;
 
         active                      = true;
-        focusState                  = Desktop::focusState();
-        previousFocusWindow         = focusState->m_focusWindow;
-        previousFocusSurface        = focusState->m_focusSurface;
         previousBorderColor         = window->m_realBorderColor;
         previousBorderColorPrevious = window->m_realBorderColorPrevious;
         previousShadowColor         = window->m_realShadowColor;
@@ -160,11 +155,7 @@ struct SOverviewPseudoFocusState {
         previousOpacity             = window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value();
         previousDim                 = window->m_dimPercent->value();
 
-        focusState->m_focusWindow = pseudoFocusWindow;
-        if (pseudoFocusWindow->wlSurface() && pseudoFocusWindow->wlSurface()->resource())
-            focusState->m_focusSurface = pseudoFocusWindow->wlSurface()->resource();
-
-        const bool ISACTIVE    = window == pseudoFocusWindow;
+        const bool ISACTIVE    = selected;
         const bool GROUPLOCKED = window->m_group ? window->m_group->locked() || g_pKeybindManager->m_groupsLocked : g_pKeybindManager->m_groupsLocked;
         const bool NOGROUP     = window->m_groupRules & Desktop::View::GROUP_DENY;
         const auto BORDERKEY   = window->m_group ?
@@ -198,7 +189,7 @@ struct SOverviewPseudoFocusState {
         window->m_realShadowColorPrevious = window->m_realShadowColor;
         window->m_realGlowColorPrevious   = window->m_realGlowColor;
 
-        window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value() = getOverviewWindowTargetOpacity(window);
+        window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value() = getOverviewWindowTargetOpacity(window, selected);
 
         const bool ISMODALSHADOWED = window->m_xdgSurface && window->m_xdgSurface->m_toplevel && window->m_xdgSurface->m_toplevel->anyChildModal();
         float      dim             = ISACTIVE || window->m_ruleApplicator->noDim().valueOrDefault() || !ScrollOverview::Config::getValue<bool>("decoration:dim_inactive") ?
@@ -209,7 +200,7 @@ struct SOverviewPseudoFocusState {
         window->m_dimPercent->value() = dim;
     }
 
-    ~SOverviewPseudoFocusState() {
+    ~SOverviewSelectionRenderState() {
         if (!active)
             return;
 
@@ -221,8 +212,6 @@ struct SOverviewPseudoFocusState {
         window->m_realGlowColorPrevious   = previousGlowColorPrevious;
         window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value() = previousOpacity;
         window->m_dimPercent->value()                 = previousDim;
-        focusState->m_focusWindow                     = previousFocusWindow;
-        focusState->m_focusSurface                    = previousFocusSurface;
     }
 };
 
@@ -412,10 +401,10 @@ static void raiseWindowPopups(const PHLWINDOW& window, size_t firstElement) {
     });
 }
 
-static SOverviewWindowMetrics getOverviewWindowMetrics(PHLMONITOR monitor, const PHLWINDOW& window, float renderScale) {
+static SOverviewWindowMetrics getOverviewWindowMetrics(PHLMONITOR monitor, const PHLWINDOW& window, float renderScale, bool selected) {
     SOverviewWindowMetrics metrics;
     metrics.renderScale   = renderScale;
-    metrics.targetOpacity = getOverviewWindowTargetOpacity(window);
+    metrics.targetOpacity = getOverviewWindowTargetOpacity(window, selected);
 
     if (!monitor || !window)
         return metrics;
@@ -653,7 +642,50 @@ static void renderOverviewWindowBorder(PHLMONITOR monitor, const PHLWINDOW& wind
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(data));
 }
 
-static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha) {
+static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics) {
+    if (!window || !ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled", monitor))
+        return;
+
+    const std::string& title = window->m_title.empty() ? window->m_class : window->m_title;
+    if (title.empty())
+        return;
+
+    const float scale       = std::max(0.1F, metrics.pxScale);
+    const float padding     = std::round(6.F * scale);
+    const float titleHeight = std::min(std::round(24.F * scale), sc<float>(windowBox.height - padding * 2.F));
+    CBox        titleBox    = {windowBox.x + padding, windowBox.y + padding, windowBox.width - padding * 2.F, titleHeight};
+    const int   maxWidth    = sc<int>(std::floor(titleBox.width - padding * 2.F));
+    if (titleBox.width <= 0.F || titleBox.height <= 0.F || maxWidth < 1)
+        return;
+
+    CHyprColor textColor = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:text_color", monitor)));
+    textColor.a *= metrics.targetOpacity;
+    auto texture = g_pHyprRenderer->renderText(title, textColor,
+        std::max(1, sc<int>(std::round(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:font_size", monitor) * scale))), false,
+        ScrollOverview::Config::getValue<std::string>("misc:font_family"), maxWidth, 700);
+    if (!texture || !texture->ok() || texture->m_size.y > titleBox.height)
+        return;
+
+    CHyprColor background = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:background_color", monitor)));
+    background.a *= metrics.targetOpacity;
+    g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{
+        .box           = titleBox,
+        .color         = background,
+        .round         = std::max(0, sc<int>(std::round(4.F * scale))),
+        .roundingPower = 2.F,
+    }));
+
+    CBox textBox = titleBox;
+    textBox.x += (titleBox.width - texture->m_size.x) / 2.F;
+    textBox.y += (titleBox.height - texture->m_size.y) / 2.F;
+    textBox.width  = texture->m_size.x;
+    textBox.height = texture->m_size.y;
+    textBox.round();
+    g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(CTexPassElement::SRenderData{.tex = texture, .box = textBox, .a = 1.F}));
+}
+
+static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha,
+                                              bool selected = false) {
     if (!monitor || !window || !window->m_group || window->m_group->size() < 1)
         return;
 
@@ -673,7 +705,6 @@ static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW
 
     const bool  groupLocked  = window->m_group->locked() || g_pKeybindManager->m_groupsLocked;
     const auto  groupWindows = window->m_group->windows();
-    const auto  focusedWindow = Desktop::focusState()->window();
     const float indicatorH   = sc<float>(PINDICATORHEIGHT) * metrics.pxScale;
     const float outerGap     = sc<float>(POUTERGAP) * metrics.pxScale;
     const float innerGap     = sc<float>(PINNERGAP) * metrics.pxScale;
@@ -697,7 +728,7 @@ static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW
         if (!member)
             continue;
 
-        CHyprColor color = member == focusedWindow ? COLACTIVE->m_colors[0] : COLINACTIVE->m_colors[0];
+        CHyprColor color = selected && member == window ? COLACTIVE->m_colors[0] : COLINACTIVE->m_colors[0];
 
         color.a *= alpha;
         if (color.a <= 0.F)
@@ -726,7 +757,8 @@ static void renderOverviewGroupTabIndicators(PHLMONITOR monitor, const PHLWINDOW
     }
 }
 
-static void renderOverviewGroupTabTitles(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha) {
+static void renderOverviewGroupTabTitles(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics, float alpha,
+                                         bool selected) {
     if (!monitor || !window || !window->m_group || window->m_group->size() < 1 || alpha <= 0.F)
         return;
 
@@ -750,7 +782,6 @@ static void renderOverviewGroupTabTitles(PHLMONITOR monitor, const PHLWINDOW& wi
 
     const bool  groupLocked  = window->m_group->locked() || g_pKeybindManager->m_groupsLocked;
     const auto  groupWindows = window->m_group->windows();
-    const auto  focusedWindow = Desktop::focusState()->window();
     const float outerGap     = sc<float>(POUTERGAP) * metrics.pxScale;
     const float innerGap     = sc<float>(PINNERGAP) * metrics.pxScale;
     const float oneBarHeight = sc<float>(POUTERGAP + PINDICATORHEIGHT + PINDICATORGAP + PHEIGHT) * metrics.pxScale;
@@ -798,7 +829,7 @@ static void renderOverviewGroupTabTitles(PHLMONITOR monitor, const PHLWINDOW& wi
             continue;
 
         CHyprColor textColor;
-        const bool isCurrent = member == focusedWindow;
+        const bool isCurrent = selected && member == window;
         if (groupLocked)
             textColor = isCurrent ? COLORLOCKEDACTIVE : COLORLOCKEDINACTIVE;
         else
@@ -962,9 +993,11 @@ void renderOverviewWindow(const SRenderParams& params) {
     if (!params.window)
         return;
 
-    const SOverviewPseudoFocusState pseudoFocusState{params.window, params.pseudoFocusWindow};
+    // Drag/post-drop pseudo-selection takes precedence over the navigation target.
+    const bool selected = params.pseudoFocusWindow ? params.window == params.pseudoFocusWindow : params.selected;
+    const SOverviewSelectionRenderState selectionState{params.window, selected};
     const bool                   fullscreen   = Fullscreen::controller()->isFullscreen(params.window);
-    const SOverviewWindowMetrics metrics      = getOverviewWindowMetrics(params.monitor, params.window, params.renderScale);
+    const SOverviewWindowMetrics metrics      = getOverviewWindowMetrics(params.monitor, params.window, params.renderScale, selected);
 
     if (!fullscreen)
         renderOverviewWindowShadow(params.monitor, params.window, params.windowBox, metrics, params.selected);
@@ -981,6 +1014,9 @@ void renderOverviewWindow(const SRenderParams& params) {
     const Vector2D previousWindowSize      = params.window->m_realSize->value();
     const bool     previousAnimatingIn     = params.window->m_animatingIn;
     const bool     previousSizeAnimating   = params.window->sizeAnimation()->isBeingAnimated();
+    const auto     previousBorderSize      = params.window->m_ruleApplicator->borderSize();
+    const bool     previousBorderCacheDirty = params.window->m_borderSizeCacheDirty;
+    const int      previousCachedBorderSize = params.window->m_cachedBorderSize;
     const auto     WORKSPACE               = params.window->m_workspace;
     const bool     OVERRIDEWORKSPACEOFFSET = WORKSPACE && !params.window->m_pinned;
     const Vector2D previousWorkspaceOffset = OVERRIDEWORKSPACEOFFSET ? WORKSPACE->m_renderOffset->value() : Vector2D{};
@@ -988,6 +1024,12 @@ void renderOverviewWindow(const SRenderParams& params) {
     params.window->positionAnimation()->value() = params.monitor->m_position + params.windowBox.pos() / params.monitor->m_scale - params.window->m_floatingOffset;
     params.window->sizeAnimation()->value()     = params.windowBox.size() / params.monitor->m_scale;
     params.window->m_animatingIn                 = true;
+    // Native window rendering must fill the expanded tiled preview. Its border
+    // is drawn separately below, using the original metrics and selection color.
+    if (!params.window->m_isFloating) {
+        params.window->m_ruleApplicator->borderSize().set(0, Desktop::Types::PRIORITY_SET_PROP);
+        params.window->m_borderSizeCacheDirty = true;
+    }
     COverviewAnimatedVariableAccess::setBeingAnimated(params.window->sizeAnimation().get(), true);
     if (OVERRIDEWORKSPACEOFFSET)
         WORKSPACE->m_renderOffset->value() = {};
@@ -996,6 +1038,9 @@ void renderOverviewWindow(const SRenderParams& params) {
         params.window->positionAnimation()->value() = previousWindowPos;
         params.window->sizeAnimation()->value()     = previousWindowSize;
         params.window->m_animatingIn                 = previousAnimatingIn;
+        params.window->m_ruleApplicator->borderSizeOverride(previousBorderSize);
+        params.window->m_borderSizeCacheDirty = previousBorderCacheDirty;
+        params.window->m_cachedBorderSize     = previousCachedBorderSize;
         COverviewAnimatedVariableAccess::setBeingAnimated(params.window->sizeAnimation().get(), previousSizeAnimating);
         if (OVERRIDEWORKSPACEOFFSET && WORKSPACE)
             WORKSPACE->m_renderOffset->value() = previousWorkspaceOffset;
@@ -1014,12 +1059,14 @@ void renderOverviewWindow(const SRenderParams& params) {
     renderOverviewCustomDecorations(params.monitor, params.window, params.workspaceBox ? *params.workspaceBox : CBox{}, params.windowBox, metrics, DECORATION_LAYER_OVERLAY);
 
     if (!fullscreen)
-        renderOverviewGroupTabIndicators(params.monitor, params.window, params.windowBox, metrics, metrics.targetOpacity);
+        renderOverviewGroupTabIndicators(params.monitor, params.window, params.windowBox, metrics, metrics.targetOpacity, selected);
     if (!fullscreen)
-        renderOverviewGroupTabTitles(params.monitor, params.window, params.windowBox, metrics, metrics.targetOpacity);
+        renderOverviewGroupTabTitles(params.monitor, params.window, params.windowBox, metrics, metrics.targetOpacity, selected);
 
     if (!fullscreen)
         renderOverviewWindowBorder(params.monitor, params.window, params.windowBox, metrics, params.selected);
+
+    renderOverviewWindowTitle(params.monitor, params.window, params.windowBox, metrics);
 
     raiseWindowPopups(params.window, firstWindowPassElement);
     OverviewRender::flushPass(params.monitor);

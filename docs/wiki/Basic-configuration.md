@@ -41,6 +41,37 @@ end)
 | blur | bool | blur the main overview wallpaper without blurring workspace wallpapers | `false` |
 | input | structure | input configuration subcategory; accepts a structure containing the properties listed below | see below |
 | shadow | structure | shadow configuration subcategory; accepts a structure containing the properties listed below | see below |
+| title | structure | window title label configuration; also accepts per-monitor overrides | see below |
+
+### Window previews and selection
+
+Tiled previews fill their inner gaps using the nonnegative sides of `general.gaps_in`, including asymmetric gaps. This changes overview rendering and its hit/drag geometry only, not the real window layout. Floating previews retain their original geometry and borders; fullscreen previews are not expanded. Workspace spacing remains controlled by `workspace_gap`.
+
+The selected window uses Hyprland's configured active border colors; other previews use the inactive colors. Window rules, group/locked-group colors and no-group colors are respected. A dragged window (or the brief post-drop selection) takes visual precedence. Rendering this selection does not change compositor or seat focus; existing navigation and selection actions keep their upstream focus behavior.
+
+Opacity and inactive/modal dimming use the existing `decoration` settings and window rules. There is no additional dark overlay. If `decoration.dim_inactive` is disabled, unselected previews are not forcibly dimmed. Borderless windows remain borderless.
+
+### Subcategory `title`
+
+Labels display the window title, falling back to its application class when the title is empty. They are centered inside a banner inset from the top of the preview, including fullscreen previews. Text uses `misc.font_family` at bold weight and is width-limited; banner and text scale with the preview and follow its opacity. Previews too small to contain a label omit it.
+
+| property | type | description | default |
+| --- | --- | --- | --- |
+| enabled | bool | show window title labels | `true` |
+| font_size | int | title font size before preview/monitor scaling; at least 1 | `12` |
+| text_color | int | packed ARGB text color | `0xFFFFFFFF` |
+| background_color | int | packed ARGB banner color | `0x99000000` |
+
+```lua
+hl.plugin.scrolloverview.configure({
+    title = {
+        enabled = true,
+        font_size = 12,
+        text_color = 0xFFFFFFFF,
+        background_color = 0x99000000,
+    },
+})
+```
 
 ### Subcategory `input`
 

@@ -424,6 +424,10 @@ static void defineConfigValues() {
     addValue(makeShared<CIntValue>("plugin:scrolloverview:shadow:range", "workspace card shadow range", -1));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:shadow:render_power", "workspace card shadow render power", -1));
     addValue(makeShared<CGradientValue>("plugin:scrolloverview:shadow:color", "workspace card shadow color", -1));
+    addValue(makeShared<CBoolValue>("plugin:scrolloverview:title:enabled", "show window titles in the overview", true));
+    addValue(makeShared<CIntValue>("plugin:scrolloverview:title:font_size", "overview window title font size", 12, SIntValueOptions{.min = 1}));
+    addValue(makeShared<CIntValue>("plugin:scrolloverview:title:text_color", "overview window title color", 0xFFFFFFFF));
+    addValue(makeShared<CIntValue>("plugin:scrolloverview:title:background_color", "overview window title background color", 0x99000000));
 }
 
 static void initializeMonitorConfig() {

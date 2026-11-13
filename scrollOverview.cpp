@@ -344,12 +344,26 @@ static CBox getOverviewGlobalBox(CBox globalBox, PHLMONITOR monitor, float scale
     return getOverviewBox({globalBox.pos() - monitor->m_position, globalBox.size()}, monitor, scale, viewOffset, offset, layout, round);
 }
 
-static CBox getOverviewWindowBox(const PHLWINDOW& window, PHLMONITOR monitor, float scale, const Vector2D& viewOffset, float offset, ScrollOverview::Config::ELayout layout,
-                                 bool round = true) {
+// Shared by rendering, hit testing, resize handles, drag snapshots and drop
+// anchors. Expand before projection so asymmetric gaps scale with the window.
+static CBox getOverviewWindowGlobalBox(const PHLWINDOW& window) {
     if (!window)
         return {};
 
-    return getOverviewGlobalBox(window->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT), monitor, scale, viewOffset, offset, layout, round);
+    CBox box = window->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+    if (!window->m_isFloating && !Fullscreen::controller()->isFullscreen(window)) {
+        const auto GAPS = ScrollOverview::Config::getCssGapData("general:gaps_in");
+        box.x -= std::max<int64_t>(0, GAPS.m_left);
+        box.y -= std::max<int64_t>(0, GAPS.m_top);
+        box.width += std::max<int64_t>(0, GAPS.m_left) + std::max<int64_t>(0, GAPS.m_right);
+        box.height += std::max<int64_t>(0, GAPS.m_top) + std::max<int64_t>(0, GAPS.m_bottom);
+    }
+    return box;
+}
+
+static CBox getOverviewWindowBox(const PHLWINDOW& window, PHLMONITOR monitor, float scale, const Vector2D& viewOffset, float offset, ScrollOverview::Config::ELayout layout,
+                                 bool round = true) {
+    return getOverviewGlobalBox(getOverviewWindowGlobalBox(window), monitor, scale, viewOffset, offset, layout, round);
 }
 
 static CBox getOverviewDragWindowBox(const PHLWINDOW& window, PHLMONITOR monitor, float scale, const Vector2D& viewOffset, float offset, ScrollOverview::Config::ELayout layout,
@@ -357,8 +371,10 @@ static CBox getOverviewDragWindowBox(const PHLWINDOW& window, PHLMONITOR monitor
     if (!window)
         return {};
 
+    // Preserve upstream's floating-group drag bounds. Tiled groups must instead
+    // share the expanded thumbnail bounds used for painting and hit testing.
     const auto TARGET = window->layoutTarget();
-    if (window->m_group && TARGET)
+    if (window->m_isFloating && window->m_group && TARGET)
         return getOverviewGlobalBox(TARGET->position(), monitor, scale, viewOffset, offset, layout, round);
 
     return getOverviewWindowBox(window, monitor, scale, viewOffset, offset, layout, round);
@@ -2157,7 +2173,8 @@ PHLWINDOW CScrollOverview::windowAtOverviewCursorOnWorkspace(size_t workspaceIdx
                 continue;
 
             const auto box    = getOverviewWindowBox(WINDOW, MONITOR, scale->value(), viewOffset->value(), WORKSPACE_OFFSET, layout);
-            const auto hitbox = expandOverviewWindowHitbox(box, scale->value(), MONITOR->m_scale);
+            // Tiled previews already fill their gaps; do not expand them again.
+            const auto hitbox = floating ? expandOverviewWindowHitbox(box, scale->value(), MONITOR->m_scale) : box;
             if (box.containsPoint(lastMousePosLocal)) {
                 if (windowBox)
                     *windowBox = box;
@@ -2712,7 +2729,7 @@ void CScrollOverview::beginWindowDrag(PHLWINDOW window) {
         .window       = WINDOW,
         .workspace    = WINDOW->m_workspace,
         .box          = TARGET->position(),
-        .visualBox    = WINDOW->m_group ? TARGET->position() : WINDOW->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT),
+        .visualBox    = WINDOW->m_isFloating && WINDOW->m_group ? TARGET->position() : getOverviewWindowGlobalBox(WINDOW),
         .floatSize    = TARGET->lastFloatingSize(),
         .startedTiled = !TARGET->floating(),
     };
@@ -2757,7 +2774,7 @@ std::optional<CScrollOverview::SWindowDragSnapshot> CScrollOverview::snapshotNat
         .window       = WINDOW,
         .workspace    = WINDOW->m_workspace,
         .box          = BOX,
-        .visualBox    = WINDOW->m_group ? BOX : WINDOW->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT),
+        .visualBox    = WINDOW->m_isFloating && WINDOW->m_group ? BOX : getOverviewWindowGlobalBox(WINDOW),
         .floatSize    = TARGET->lastFloatingSize(),
         .startedTiled = dragController->draggingTiled(),
     };
