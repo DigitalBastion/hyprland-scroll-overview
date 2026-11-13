@@ -53,7 +53,7 @@ Opacity and inactive/modal dimming use the existing `decoration` settings and wi
 
 ### Subcategory `title`
 
-Labels display the window title, falling back to its application class when the title is empty. They are centered inside a banner inset from the top of the preview, including fullscreen previews. Text uses `misc.font_family` at bold weight and is width-limited; banner and text scale with the preview and follow its opacity. Previews too small to contain a label omit it.
+Labels display the window title, falling back to its application class when the title is empty. They are centered inside a banner inset from the top of the preview, including fullscreen previews. Text uses `misc.font_family` at bold weight and is width-limited; banner and text scale with the preview and follow its opacity. The banner grows to fit the measured text height plus padding, with a minimum height of 24 before scaling, and is clamped to the available preview height. Previews too small to contain the text omit the label rather than shrinking the requested font.
 
 | property | type | description | default |
 | --- | --- | --- | --- |
@@ -72,6 +72,8 @@ hl.plugin.scrolloverview.configure({
     },
 })
 ```
+
+For larger, readable labels at overview scale `0.5`, set `font_size = 24` (a 12-pixel font size on a scale-1 monitor). The banner adjusts automatically; no separate height setting is required.
 
 ### Subcategory `input`
 

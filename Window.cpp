@@ -34,6 +34,7 @@
 #include "Config.hpp"
 #include "OverviewPassElement.hpp"
 #include "OverviewRender.hpp"
+#include "OverviewTitle.hpp"
 
 namespace OverviewWindow {
 namespace {
@@ -652,8 +653,7 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
 
     const float scale       = std::max(0.1F, metrics.pxScale);
     const float padding     = std::round(6.F * scale);
-    const float titleHeight = std::min(std::round(24.F * scale), sc<float>(windowBox.height - padding * 2.F));
-    CBox        titleBox    = {windowBox.x + padding, windowBox.y + padding, windowBox.width - padding * 2.F, titleHeight};
+    CBox        titleBox    = {windowBox.x + padding, windowBox.y + padding, windowBox.width - padding * 2.F, windowBox.height - padding * 2.F};
     const int   maxWidth    = sc<int>(std::floor(titleBox.width - padding * 2.F));
     if (titleBox.width <= 0.F || titleBox.height <= 0.F || maxWidth < 1)
         return;
@@ -663,7 +663,11 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
     auto texture = g_pHyprRenderer->renderText(title, textColor,
         std::max(1, sc<int>(std::round(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:font_size", monitor) * scale))), false,
         ScrollOverview::Config::getValue<std::string>("misc:font_family"), maxWidth, 700);
-    if (!texture || !texture->ok() || texture->m_size.y > titleBox.height)
+    if (!texture || !texture->ok())
+        return;
+
+    titleBox.height = titleBannerHeight(windowBox.height, scale, padding, texture->m_size.y);
+    if (titleBox.height <= 0.F)
         return;
 
     CHyprColor background = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:background_color", monitor)));
