@@ -51,7 +51,13 @@ Workspace backing (wallpaper, background blur and workspace shadow) excludes the
 
 The selected window uses Hyprland's configured active border colors; other previews use the inactive colors. Window rules, group/locked-group colors and no-group colors are respected. A dragged window (or the brief post-drop selection) takes visual precedence. Rendering this selection does not change compositor or seat focus; existing navigation and selection actions keep their upstream focus behavior.
 
-Opacity and inactive/modal dimming use the existing `decoration` settings and window rules. There is no additional dark overlay. If `decoration.dim_inactive` is disabled, unselected previews are not forcibly dimmed. Borderless windows remain borderless.
+Opacity uses the existing `decoration` settings and window rules. Inactive dimming follows those settings by default; `dim.strength` can override it in the overview only. The overview-selected window stays bright, with drag/post-drop pseudo-selection taking precedence over navigation selection, independently of seat focus. The `noDim` window rule suppresses inactive dimming; modal dimming still composes independently. Native dim state is restored after each preview render. Borderless windows remain borderless.
+
+### Subcategory `dim`
+
+| property | type | description | default |
+| --- | --- | --- | --- |
+| strength | float | range `-1`–`1`; negative follows global inactive dimming, `0` disables overview inactive dimming, positive overrides its strength even when global dimming is disabled | `-1` |
 
 ### Subcategory `title`
 
@@ -63,6 +69,17 @@ Labels display the window title, falling back to its application class when the 
 | font_size | int | title font size before preview/monitor scaling; at least 1 | `12` |
 | text_color | int | packed ARGB text color | `0xFFFFFFFF` |
 | background_color | int | packed ARGB banner color | `0x99000000` |
+| divider_width | float | vertical separator width in logical pixels before preview/monitor scaling; `0` disables | `0` |
+| divider_color | int | packed ARGB separator color, following preview opacity | `0x66FFFFFF` |
+
+Dividers appear only inside the right edge of a tiled header that abuts another tiled header on the same workspace. They span only the shared header height, not the window body, and do not outline isolated, floating, fullscreen or dragged previews. Positive widths have a one-render-pixel minimum; deliberate gaps are not bridged.
+
+For example, within the existing ScrollOverview Lua configuration:
+
+```lua
+dim = { strength = 0.30 },
+title = { divider_width = 1.5, divider_color = 0x99FFFFFF },
+```
 
 ```lua
 hl.plugin.scrolloverview.configure({

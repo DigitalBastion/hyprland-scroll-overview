@@ -4537,6 +4537,30 @@ void CScrollOverview::renderWindowLive(PHLMONITOR monitor, PHLWINDOW window, con
 
     const auto PSEUDOFOCUSWINDOW = DRAGGED ? DRAGGED : PSEUDOFOCUSED;
 
+    std::vector<OverviewWindow::STitleNeighbor> titleNeighbors;
+    if (workspaceBox && !dragged && !window->m_isFloating && !Fullscreen::controller()->isFullscreen(window) &&
+        ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled", monitor) &&
+        ScrollOverview::Config::getValue<float>("plugin:scrolloverview:title:divider_width", monitor) > 0.F) {
+        for (size_t i = 0; i < images.size(); ++i) {
+            const auto& image = images[i];
+            if (image->pWorkspace != window->m_workspace)
+                continue;
+            const auto offset = workspaceOverviewOffset(i, activeWorkspaceIndex(), getWorkspaceRenderedPitch(monitor, renderScale, layout));
+            for (const auto& ref : image->windows) {
+                const auto neighbor = getOverviewWindowToShow(ref.lock());
+                if (!shouldShowOverviewWindow(neighbor) || neighbor == window || neighbor == DRAGGED || neighbor->m_isFloating ||
+                    Fullscreen::controller()->isFullscreen(neighbor))
+                    continue;
+                const auto box = getOverviewWindowBox(neighbor, monitor, renderScale, viewOffset->value(), offset, layout);
+                if (!overviewBoxIntersectsMonitor(box, monitor))
+                    continue;
+                if (std::abs(windowBox.x + windowBox.width - box.x) <= 0.5 && box.y < windowBox.y + windowBox.height && box.y + box.height > windowBox.y)
+                    titleNeighbors.push_back({neighbor, box});
+            }
+            break;
+        }
+    }
+
     forceWindowVisible(window);
     forceWindowSurfaceVisibility(window);
 
@@ -4550,6 +4574,7 @@ void CScrollOverview::renderWindowLive(PHLMONITOR monitor, PHLWINDOW window, con
         .selected             = closeOnWindow == window,
         .dragged              = dragged,
         .pseudoFocusWindow    = PSEUDOFOCUSWINDOW,
+        .titleNeighbors       = std::move(titleNeighbors),
     });
 }
 

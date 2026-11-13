@@ -16,6 +16,21 @@ internal padding, exact fits without exterior height reservation, tiny previews,
 fractional scales and nonzero origins. It does not validate compositor texture upload or
 render-pass output.
 
+The same executable tests shared-edge-only title dividers at fractional scales,
+zero-width disabling, gap/stack rejection, overview versus pseudo-selection,
+inactive dim override/inheritance, `noDim`, modal composition, and restoration
+of the temporary native dim value. Native rendering/configuration registration
+and Lua monitor overrides require separate integration verification.
+
+```sh
+python3 tests/overview-appearance-wiring.py
+```
+
+Static integration assertions connect those helpers to the real preview render
+parameters, matching transition-aware neighbor projection and visibility,
+excluding dragged/pinned overlays, and checking second-header fit and clipped
+divider output. They do not execute the compositor render path.
+
 ## Reservation-only workspace backing
 
 ```sh

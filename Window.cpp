@@ -3,6 +3,7 @@
 #include <cmath>
 #include <dlfcn.h>
 #include <functional>
+#include <optional>
 #define private public
 #define protected public
 #include <hyprland/src/render/Renderer.hpp>
@@ -35,6 +36,7 @@
 #include "OverviewPassElement.hpp"
 #include "OverviewRender.hpp"
 #include "OverviewTitle.hpp"
+#include "OverviewAppearance.hpp"
 
 namespace OverviewWindow {
 namespace {
@@ -139,10 +141,10 @@ struct SOverviewSelectionRenderState {
     Config::CGradientValueData     previousGlowColor;
     Config::CGradientValueData     previousGlowColorPrevious;
     float                          previousOpacity = 1.F;
-    float                          previousDim     = 0.F;
+    std::optional<CPreviewDimState> dimState;
     bool                           active          = false;
 
-    SOverviewSelectionRenderState(const PHLWINDOW& window_, bool selected) : window(window_) {
+    SOverviewSelectionRenderState(const PHLWINDOW& window_, bool selected, PHLMONITOR monitor) : window(window_) {
         if (!window)
             return;
 
@@ -154,7 +156,6 @@ struct SOverviewSelectionRenderState {
         previousGlowColor           = window->m_realGlowColor;
         previousGlowColorPrevious   = window->m_realGlowColorPrevious;
         previousOpacity             = window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value();
-        previousDim                 = window->m_dimPercent->value();
 
         const bool ISACTIVE    = selected;
         const bool GROUPLOCKED = window->m_group ? window->m_group->locked() || g_pKeybindManager->m_groupsLocked : g_pKeybindManager->m_groupsLocked;
@@ -193,12 +194,10 @@ struct SOverviewSelectionRenderState {
         window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value() = getOverviewWindowTargetOpacity(window, selected);
 
         const bool ISMODALSHADOWED = window->m_xdgSurface && window->m_xdgSurface->m_toplevel && window->m_xdgSurface->m_toplevel->anyChildModal();
-        float      dim             = ISACTIVE || window->m_ruleApplicator->noDim().valueOrDefault() || !ScrollOverview::Config::getValue<bool>("decoration:dim_inactive") ?
-                 0.F :
-                 ScrollOverview::Config::getValue<float>("decoration:dim_strength");
-        if (ISMODALSHADOWED && ScrollOverview::Config::getValue<bool>("decoration:dim_modal"))
-            dim += (1.F - dim) / 2.F;
-        window->m_dimPercent->value() = dim;
+        dimState.emplace(window->m_dimPercent->value(), previewDim(selected, window->m_ruleApplicator->noDim().valueOrDefault(),
+            ScrollOverview::Config::getValue<float>("plugin:scrolloverview:dim:strength", monitor),
+            ScrollOverview::Config::getValue<bool>("decoration:dim_inactive"), ScrollOverview::Config::getValue<float>("decoration:dim_strength"),
+            ISMODALSHADOWED, ScrollOverview::Config::getValue<bool>("decoration:dim_modal")));
     }
 
     ~SOverviewSelectionRenderState() {
@@ -212,7 +211,6 @@ struct SOverviewSelectionRenderState {
         window->m_realGlowColor           = previousGlowColor;
         window->m_realGlowColorPrevious   = previousGlowColorPrevious;
         window->alpha(Desktop::View::WINDOW_ALPHA_ACTIVE)->value() = previousOpacity;
-        window->m_dimPercent->value()                 = previousDim;
     }
 };
 
@@ -654,25 +652,27 @@ class COverviewTitleBackgroundPassElement : public CRectPassElement {
     }
 };
 
-static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics) {
-    if (!window || !ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled", monitor))
-        return;
+static SP<Render::ITexture> overviewTitleTexture(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& box, float scale, const CHyprColor& color) {
+    const auto& title = window->m_title.empty() ? window->m_class : window->m_title;
+    const int maxWidth = sc<int>(std::floor(box.width - 2.F * std::round(6.F * scale)));
+    if (title.empty() || box.empty() || maxWidth < 1)
+        return {};
+    return g_pHyprRenderer->renderText(title, color,
+        std::max(1, sc<int>(std::round(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:font_size", monitor) * scale))), false,
+        ScrollOverview::Config::getValue<std::string>("misc:font_family"), maxWidth, 700);
+}
 
-    const std::string& title = window->m_title.empty() ? window->m_class : window->m_title;
-    if (title.empty())
+static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& window, const CBox& windowBox, const SOverviewWindowMetrics& metrics,
+                                     const std::vector<STitleNeighbor>& neighbors) {
+    if (!window || !ScrollOverview::Config::getValue<bool>("plugin:scrolloverview:title:enabled", monitor))
         return;
 
     const float scale       = std::max(0.1F, metrics.pxScale);
     const float padding     = std::round(6.F * scale);
-    const int   maxWidth    = sc<int>(std::floor(windowBox.width - padding * 2.F));
-    if (windowBox.empty() || maxWidth < 1)
-        return;
 
     CHyprColor textColor = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:text_color", monitor)));
     textColor.a *= metrics.targetOpacity;
-    auto texture = g_pHyprRenderer->renderText(title, textColor,
-        std::max(1, sc<int>(std::round(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:font_size", monitor) * scale))), false,
-        ScrollOverview::Config::getValue<std::string>("misc:font_family"), maxWidth, 700);
+    auto texture = overviewTitleTexture(monitor, window, windowBox, scale, textColor);
     if (!texture || !texture->ok())
         return;
 
@@ -690,6 +690,27 @@ static void renderOverviewWindowTitle(PHLMONITOR monitor, const PHLWINDOW& windo
         .roundingPower = metrics.roundingPower,
         .clipBox       = titleBox,
     }));
+
+    const float dividerWidth = ScrollOverview::Config::getValue<float>("plugin:scrolloverview:title:divider_width", monitor);
+    if (dividerWidth > 0.F) {
+        auto color = CHyprColor(sc<uint64_t>(ScrollOverview::Config::getValue<int>("plugin:scrolloverview:title:divider_color", monitor)));
+        color.a *= metrics.targetOpacity;
+        for (const auto& neighbor : neighbors) {
+            const auto neighborTexture = overviewTitleTexture(monitor, neighbor.window, neighbor.box, scale, textColor);
+            if (!neighborTexture || !neighborTexture->ok())
+                continue;
+            const auto neighborTitle = titleBannerBox(neighbor.box, scale, padding, neighborTexture->m_size.y);
+            const auto divider = titleDividerBox(titleBox, neighborTitle, dividerWidth, scale);
+            if (divider.empty())
+                continue;
+            // Clip the preview-shaped rounded rect to the seam, keeping its
+            // corners attached just like the header background itself.
+            g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewTitleBackgroundPassElement>(CRectPassElement::SRectData{
+                .box = windowBox, .color = color, .round = FULLSCREEN ? 0 : metrics.roundingPx,
+                .roundingPower = metrics.roundingPower, .clipBox = divider,
+            }));
+        }
+    }
 
     CBox textBox = titleBox;
     textBox.x += (titleBox.width - texture->m_size.x) / 2.F;
@@ -1010,8 +1031,8 @@ void renderOverviewWindow(const SRenderParams& params) {
         return;
 
     // Drag/post-drop pseudo-selection takes precedence over the navigation target.
-    const bool selected = params.pseudoFocusWindow ? params.window == params.pseudoFocusWindow : params.selected;
-    const SOverviewSelectionRenderState selectionState{params.window, selected};
+    const bool selected = previewSelected(params.selected, bool(params.pseudoFocusWindow), params.window == params.pseudoFocusWindow);
+    const SOverviewSelectionRenderState selectionState{params.window, selected, params.monitor};
     const bool                   fullscreen   = Fullscreen::controller()->isFullscreen(params.window);
     const SOverviewWindowMetrics metrics      = getOverviewWindowMetrics(params.monitor, params.window, params.renderScale, selected);
 
@@ -1082,7 +1103,7 @@ void renderOverviewWindow(const SRenderParams& params) {
     if (!fullscreen)
         renderOverviewWindowBorder(params.monitor, params.window, params.windowBox, metrics, params.selected);
 
-    renderOverviewWindowTitle(params.monitor, params.window, params.windowBox, metrics);
+    renderOverviewWindowTitle(params.monitor, params.window, params.windowBox, metrics, params.titleNeighbors);
 
     raiseWindowPopups(params.window, firstWindowPassElement);
     OverviewRender::flushPass(params.monitor);

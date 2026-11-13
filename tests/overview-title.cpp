@@ -1,4 +1,5 @@
 #include "../OverviewTitle.hpp"
+#include "../OverviewAppearance.hpp"
 
 #include <pango/pangocairo.h>
 
@@ -82,4 +83,42 @@ int main() {
         }
     }
     std::cout << "Overview title geometry: passed\n";
+    for (const float scale : {0.5F, 1.F, 1.25F, 2.F}) {
+        const Hyprutils::Math::CBox left{-80.25,30.5,200,24*scale};
+        const Hyprutils::Math::CBox right{119.75,30.5,300,30*scale};
+        const auto seam = OverviewWindow::titleDividerBox(left, right, 1.5F, scale);
+        require(seam.width == std::max(1.F, std::round(1.5F*scale)), "divider width scales in pixels");
+        require(seam.y == left.y && seam.height == left.height && seam.x + seam.width == right.x,
+                "divider is inside the shared header edge, never full preview height");
+        require(OverviewWindow::titleDividerBox(left, right, 0, scale).empty(), "zero width disables divider");
+        require(OverviewWindow::titleDividerBox(left, {130,30.5,300,30}, 1.5F, scale).empty(), "no divider across gaps");
+        require(OverviewWindow::titleDividerBox(left, {-80.25,150,200,30}, 1.5F, scale).empty(), "no divider for vertical stacks");
+        require(OverviewWindow::titleDividerBox(left, {}, 1.5F, scale).empty(), "no divider without a second header");
+        const auto partial = OverviewWindow::titleDividerBox(left, {119.75,left.y + left.height/2,300,200}, 1.5F, scale);
+        require(partial.y == left.y + left.height/2 && partial.height == left.height/2,
+                "unequal header tops restrict divider to shared title height");
+        const auto wide = OverviewWindow::titleDividerBox(left, right, 1000, scale);
+        require(wide.x == left.x && wide.width == left.width, "divider cannot escape the header");
+    }
+    using namespace OverviewWindow;
+    require(previewSelected(true,false,false), "navigation selection is bright");
+    require(!previewSelected(true,true,false) && previewSelected(false,true,true), "drag pseudo-selection takes precedence");
+    require(previewDim(false,false,.3F,false,.2F,false,false) == .3F, "overview dim overrides disabled global dim");
+    require(previewDim(true,false,.3F,true,.2F,false,false) == 0, "selected preview remains bright");
+    require(previewDim(false,true,.3F,true,.2F,false,false) == 0, "noDim rule suppresses inactive dim");
+    require(previewDim(false,false,-1.F,true,.2F,false,false) == .2F, "default inherits global dim");
+    require(previewDim(false,false,-1.F,false,.2F,false,false) == 0, "default inherits global dim disabled");
+    require(previewDim(false,false,0.F,true,.2F,false,false) == 0, "explicit zero overrides global dim");
+    require(previewDim(false,false,1.F,false,.2F,false,false) == 1, "full-strength override is supported");
+    require(std::abs(previewDim(false,false,.3F,false,.2F,true,true) - .65F) < .0001F, "modal dim composes with inactive dim");
+    require(previewDim(true,true,.3F,false,.2F,true,true) == .5F, "preserve independent modal dim semantics");
+    float nativeDim = .17F;
+    {
+        CPreviewDimState state(nativeDim, .3F);
+        require(nativeDim == .3F, "preview applies temporary native dim");
+        { CPreviewDimState nested(nativeDim, 0.F); }
+        require(nativeDim == .3F, "nested preview restores enclosing dim");
+    }
+    require(nativeDim == .17F, "preview restores native dim after rendering");
+    std::cout << "Title divider and preview dim state: passed\n";
 }

@@ -420,6 +420,8 @@ static void defineConfigValues() {
                                    SIntValueOptions{.min = 0}));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:wallpaper", "wallpaper mode", 0, SIntValueOptions{.min = 0, .max = 2}));
     addValue(makeShared<CBoolValue>("plugin:scrolloverview:blur", "blur the overview wallpaper", false));
+    addValue(makeShared<CFloatValue>("plugin:scrolloverview:dim:strength", "overview inactive dim strength; negative follows global dimming", -1.F,
+                                     SFloatValueOptions{.min = -1.F, .max = 1.F}));
     addValue(makeShared<CBoolValue>("plugin:scrolloverview:shadow:enabled", "draw a shadow around each workspace card", false));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:shadow:range", "workspace card shadow range", -1));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:shadow:render_power", "workspace card shadow render power", -1));
@@ -428,6 +430,9 @@ static void defineConfigValues() {
     addValue(makeShared<CIntValue>("plugin:scrolloverview:title:font_size", "overview window title font size", 12, SIntValueOptions{.min = 1}));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:title:text_color", "overview window title color", 0xFFFFFFFF));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:title:background_color", "overview window title background color", 0x99000000));
+    addValue(makeShared<CFloatValue>("plugin:scrolloverview:title:divider_width", "divider width between adjoining overview title headers", 0.F,
+                                     SFloatValueOptions{.min = 0.F}));
+    addValue(makeShared<CIntValue>("plugin:scrolloverview:title:divider_color", "overview title divider color", 0x66FFFFFF));
 }
 
 static void initializeMonitorConfig() {
