@@ -47,6 +47,8 @@ end)
 
 Tiled previews fill their inner gaps using the nonnegative sides of `general.gaps_in`, including asymmetric gaps. This changes overview rendering and its hit/drag geometry only, not the real window layout. Floating previews retain their original geometry and borders; fullscreen previews are not expanded. Workspace spacing remains controlled by `workspace_gap`.
 
+Workspace backing (wallpaper, background blur and workspace shadow) excludes the monitor's reserved areas on all edges. Window previews and their interaction coordinates are unchanged, so fullscreen windows, floating windows and popups can still extend beyond the backing. Workspace pitch remains based on the full monitor; reservations along the overview layout axis therefore add space between backing rectangles without changing `workspace_gap`.
+
 The selected window uses Hyprland's configured active border colors; other previews use the inactive colors. Window rules, group/locked-group colors and no-group colors are respected. A dragged window (or the brief post-drop selection) takes visual precedence. Rendering this selection does not change compositor or seat focus; existing navigation and selection actions keep their upstream focus behavior.
 
 Opacity and inactive/modal dimming use the existing `decoration` settings and window rules. There is no additional dark overlay. If `decoration.dim_inactive` is disabled, unselected previews are not forcibly dimmed. Borderless windows remain borderless.

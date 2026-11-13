@@ -428,6 +428,17 @@ static CBox getOverviewWorkspaceBox(PHLMONITOR monitor, float scale, const Vecto
     return getOverviewBox({{}, monitor->m_size}, monitor, scale, viewOffset, offset, layout);
 }
 
+// Backing bounds only: retain the full-monitor projection origin everywhere
+// else, including window geometry, input mapping and workspace pitch.
+static CBox getOverviewWorkspaceBackingBox(PHLMONITOR monitor, float scale, const Vector2D& viewOffset, float offset, ScrollOverview::Config::ELayout layout) {
+    auto usable = monitor->logicalBoxMinusReserved();
+    if (usable.empty())
+        return {};
+
+    usable.translate(-monitor->m_position);
+    return getOverviewBox(usable, monitor, scale, viewOffset, offset, layout);
+}
+
 static CBox getWorkspaceGlobalBox(PHLWORKSPACE workspace, PHLMONITOR fallbackMonitor) {
     const auto MONITOR = workspace && workspace->m_monitor ? workspace->m_monitor.lock() : fallbackMonitor;
     if (!MONITOR)
@@ -1686,8 +1697,60 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
     syncSelectionToViewport();
 }
 
-static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const CBox& workspaceBox, float renderScale, const Time::steady_tp& now, float alpha = 1.F) {
-    if (!monitor)
+// Hyprland 0.56.2's surface opaqueRegion() does not account for clipBox. A
+// clipped backing must not occlude earlier cards/shadows outside its crop.
+class COverviewBackingSurfacePassElement : public CSurfacePassElement {
+  public:
+    using CSurfacePassElement::CSurfacePassElement;
+    CRegion opaqueRegion() override {
+        return {};
+    }
+};
+
+// Native rect occlusion mixes logical bounds with pixel clip coordinates at
+// non-unit monitor scales. Keep dim-around backing rects conservative too.
+class COverviewBackingRectPassElement : public CRectPassElement {
+  public:
+    using CRectPassElement::CRectPassElement;
+    CRegion opaqueRegion() override {
+        return {};
+    }
+};
+
+// renderLayer queues surface passes (including child surfaces/popups) and may
+// queue a dim-around rect. Native per-element clips are in scaled monitor
+// coordinates and survive deferred rendering; GL scissoring at enqueue time
+// would not. Never touch passes outside this layer's newly queued range.
+static void clipOverviewLayerPassElements(size_t firstElement, const CBox& clipBox) {
+    auto& elements = g_pHyprRenderer->m_renderPass.m_passElements;
+    for (size_t i = firstElement; i < elements.size();) {
+        auto* element = elements[i].element.get();
+        CBox* nativeClip = nullptr;
+        if (auto* surface = dc<CSurfacePassElement*>(element))
+            nativeClip = &surface->m_data.clipBox;
+        else if (auto* rect = dc<CRectPassElement*>(element))
+            nativeClip = &rect->m_data.clipBox;
+
+        if (nativeClip) {
+            const auto clipped = nativeClip->empty() ? clipBox : nativeClip->intersection(clipBox);
+            // An empty native clip means "unclipped", not "draw nothing".
+            if (clipped.empty()) {
+                elements.erase(elements.begin() + i);
+                continue;
+            }
+            *nativeClip = clipped;
+            if (auto* surface = dc<CSurfacePassElement*>(element))
+                elements[i].element = makeUnique<COverviewBackingSurfacePassElement>(surface->m_data);
+            else if (auto* rect = dc<CRectPassElement*>(element))
+                elements[i].element = makeUnique<COverviewBackingRectPassElement>(rect->m_data);
+        }
+        ++i;
+    }
+}
+
+static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const CBox& workspaceBox, float renderScale, const Time::steady_tp& now, float alpha = 1.F,
+                                     const CBox* clipBox = nullptr) {
+    if (!monitor || (clipBox && clipBox->empty()))
         return;
 
     bool pushedRenderHints = false;
@@ -1714,7 +1777,10 @@ static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const C
 			lsAlpha->setValueAndWarp(previousAlpha * std::clamp(alpha, 0.F, 1.F));
 		}
 
+        const auto FIRSTELEMENT = g_pHyprRenderer->m_renderPass.m_passElements.size();
         g_pHyprRenderer->renderLayer(LAYER, monitor, now);
+        if (clipBox)
+            clipOverviewLayerPassElements(FIRSTELEMENT, *clipBox);
 
         if (MODULATEALPHA && lsAlpha->value())
 			lsAlpha->setValueAndWarp(previousAlpha);
@@ -1724,11 +1790,11 @@ static void renderOverviewLayerLevel(PHLMONITOR monitor, uint32_t layer, const C
         g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{.renderModif = Render::SRenderModifData{}}));
 }
 
-void CScrollOverview::renderWallpaperLayers(PHLMONITOR monitor, const CBox& workspaceBox, float renderScale, const Time::steady_tp& now, float alpha) {
+void CScrollOverview::renderWallpaperLayers(PHLMONITOR monitor, const CBox& workspaceBox, const CBox& backingBox, float renderScale, const Time::steady_tp& now, float alpha) {
     if (!monitor)
         return;
 
-    renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, workspaceBox, renderScale, now, alpha);
+    renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, workspaceBox, renderScale, now, alpha, &backingBox);
 }
 
 void CScrollOverview::renderGlobalWallpaper(PHLMONITOR monitor, const Time::steady_tp& now) {
@@ -4230,9 +4296,10 @@ void CScrollOverview::renderWorkspaceBackground(PHLMONITOR monitor, size_t works
 
     const auto WORKSPACEOFFSET = workspaceOverviewOffset(workspaceIdx, activeIdx, workspacePitch);
     const auto WORKSPACEBOX     = getOverviewWorkspaceBox(monitor, renderScale, viewOffset->value(), WORKSPACEOFFSET, layout);
+    const auto BACKINGBOX       = getOverviewWorkspaceBackingBox(monitor, renderScale, viewOffset->value(), WORKSPACEOFFSET, layout);
     const auto WORKSPACEALPHA   = workspaceOverviewAlpha(workspaceIdx);
 
-    if (!overviewBoxIntersectsMonitor(WORKSPACEBOX, monitor))
+    if (!overviewBoxIntersectsMonitor(BACKINGBOX, monitor))
         return;
 
     const auto workspace         = workspaceImage->pWorkspace;
@@ -4246,16 +4313,16 @@ void CScrollOverview::renderWorkspaceBackground(PHLMONITOR monitor, size_t works
         workspace->m_forceRendering = WASFORCERENDERING;
     });
 
-    renderOverviewWorkspaceShadow(monitor, WORKSPACEBOX, renderScale, wallpaperMode == 0, WORKSPACEALPHA);
+    renderOverviewWorkspaceShadow(monitor, BACKINGBOX, renderScale, wallpaperMode == 0, WORKSPACEALPHA);
 
     if (ScrollOverview::Config::getBlur(pMonitor.lock()) && wallpaperMode != 1 && WORKSPACEALPHA > 0.001F)
-        OverviewRender::queueBlur(WORKSPACEBOX, 0, 2.F, WORKSPACEALPHA, false);
+        OverviewRender::queueBlur(BACKINGBOX, 0, 2.F, WORKSPACEALPHA, false);
 
     if (wallpaperMode != 0 && WORKSPACEALPHA > 0.001F)
-        renderWallpaperLayers(monitor, WORKSPACEBOX, renderScale, now, WORKSPACEALPHA);
+        renderWallpaperLayers(monitor, WORKSPACEBOX, BACKINGBOX, renderScale, now, WORKSPACEALPHA);
 
     if (WORKSPACEALPHA >= 0.999F)
-        renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, WORKSPACEBOX, renderScale, now);
+        renderOverviewLayerLevel(monitor, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, WORKSPACEBOX, renderScale, now, 1.F, &BACKINGBOX);
 }
 
 void CScrollOverview::renderWorkspaceLive(PHLMONITOR monitor, size_t workspaceIdx, size_t activeIdx, float workspacePitch, float renderScale, int wallpaperMode, const Time::steady_tp& now) {
@@ -5432,14 +5499,15 @@ void CScrollOverview::render() {
         const auto GHOSTALPHA   = 1.F - std::clamp(workspaceInsertFadeProgress->value(), 0.F, 1.F);
         const auto GHOSTOFFSET = workspaceInsertTransition.transitionOldRelativeOffset * SCALE * MONITOR->m_scale;
         const auto GHOSTBOX     = getOverviewWorkspaceBox(MONITOR, SCALE, viewOffset->value(), GHOSTOFFSET, layout);
+        const auto BACKINGBOX   = getOverviewWorkspaceBackingBox(MONITOR, SCALE, viewOffset->value(), GHOSTOFFSET, layout);
 
-        if (GHOSTALPHA > 0.001F && overviewBoxIntersectsMonitor(GHOSTBOX, MONITOR)) {
-            renderOverviewWorkspaceShadow(MONITOR, GHOSTBOX, SCALE, WALLPAPERMODE == 0, GHOSTALPHA);
+        if (GHOSTALPHA > 0.001F && overviewBoxIntersectsMonitor(BACKINGBOX, MONITOR)) {
+            renderOverviewWorkspaceShadow(MONITOR, BACKINGBOX, SCALE, WALLPAPERMODE == 0, GHOSTALPHA);
 
             if (WALLPAPERMODE != 0)
-                renderWallpaperLayers(MONITOR, GHOSTBOX, SCALE, NOW, GHOSTALPHA);
+                renderWallpaperLayers(MONITOR, GHOSTBOX, BACKINGBOX, SCALE, NOW, GHOSTALPHA);
 
-            renderOverviewLayerLevel(MONITOR, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, GHOSTBOX, SCALE, NOW);
+            renderOverviewLayerLevel(MONITOR, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, GHOSTBOX, SCALE, NOW, 1.F, &BACKINGBOX);
         }
     }
 
